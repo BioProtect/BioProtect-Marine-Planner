@@ -1,0 +1,12 @@
+tornado 
+psycopg2
+pandas
+#gdal
+colorama
+psutil
+sqlalchemy
+mapbox
+aiopg
+aiohttp
+
+
