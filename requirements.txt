@@ -1,7 +1,7 @@
 tornado 
 psycopg2
 pandas
-#gdal
+gdal
 colorama
 psutil
 sqlalchemy
