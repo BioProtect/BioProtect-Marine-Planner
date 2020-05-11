@@ -1,0 +1,18 @@
+{
+  "ENABLE_GUEST_USER": true,
+  "SERVER_NAME": "database",
+  "SERVER_DESCRIPTION": "marxanserver database",
+  "COOKIE_RANDOM_VALUE": "67259876128763981763982170396198736",
+  "PERMITTED_DOMAINS": "*",
+  "DATABASE_NAME": "marxanserver",
+  "DATABASE_HOST": "localhost",
+  "DATABASE_USER": "postgres",
+  "DATABASE_PASSWORD": "oxen4chit",
+  "CERTFILE": "None",
+  "KEYFILE": "None",
+  "PORT": 80,
+  "WDPA_VERSION": "August 2017",
+  "PLANNING_GRID_UNITS_LIMIT": 100000,
+  "DISABLE_SECURITY": false,
+  "DISABLE_FILE_LOGGING": false
+}

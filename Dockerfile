@@ -28,7 +28,7 @@ RUN pip3 install gdal
 #==$(gdal-config --version)
 
 COPY requirements.txt requirements.txt
-COPY server.dat.default server.dat
+COPY server.dat server.dat
 COPY . .
 
 RUN pip3 install -r requirements.txt

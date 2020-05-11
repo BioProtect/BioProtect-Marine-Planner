@@ -1,58 +1,56 @@
 #!/home/ubuntu/miniconda2/envs/python36/bin/python3.6
-import (
-    psutil,
-    urllib,
-    tornado.options,
-    webbrowser,
-    logging,
-    fnmatch,
-    json,
-    psycopg2,
-    pandas,
-    os,
-    re,
-    time,
-    traceback,
-    glob,
-    time,
-    datetime,
-    select,
-    subprocess,
-    sys,
-    zipfile,
-    shutil,
-    uuid,
-    signal,
-    colorama,
-    io,
-    requests,
-    platform,
-    ctypes,
-    aiopg,
-    asyncio,
-    aiohttp,
-    monkeypatch)
+import psutil
+import urllib
+import tornado.options
+import webbrowser
+import logging
+import fnmatch
+import json
+import psycopg2
+import pandas
+import os
+import re
+import time
+import traceback
+import glob
+import time
+import datetime
+import select
+import subprocess
+import sys
+import zipfile
+import shutil
+import uuid
+import signal
+import colorama
+import io
+import requests
+import platform
+import ctypes
+import aiopg
+import asyncio
+import aiohttp
+import monkeypatch
 from tornado.websocket import WebSocketClosedError
 from tornado.iostream import StreamClosedError
 from tornado.process import Subprocess
 from tornado.log import LogFormatter
-from tornado.web import HTTPError
-from tornado.web import StaticFileHandler
+from tornado.web import HTTPError, StaticFileHandler
 from tornado.ioloop import IOLoop, PeriodicCallback
 from tornado.platform.asyncio import AnyThreadEventLoopPolicy
-from tornado import concurrent
-from tornado import gen, queues, httpclient, concurrent
+from tornado import concurrent, gen, queues, httpclient, concurrent
 from colorama import Fore, Back, Style
 from datetime import timedelta, timezone
 from sqlalchemy import create_engine
 from collections import OrderedDict
 from subprocess import Popen, PIPE, CalledProcessError
 from threading import Thread
+import requests
+
 from urllib.parse import urlparse
 from urllib import request
 from psycopg2 import sql
-from mapbox import Uploader
-from mapbox import errors
+from mapbox import Uploader, errors
 from osgeo import ogr
 
 ####################################################################################################################################################################################################################################################################
@@ -72,6 +70,7 @@ ROLE_UNAUTHORISED_METHODS = {
 MARXAN_SERVER_VERSION = "v0.9.37"
 MARXAN_LOG_FILE = 'marxan-server.log'
 MARXAN_REGISTRY = "https://marxanweb.github.io/general/registry/marxan.js"
+MARXAN_REGISTRY_JSON = "marxan.json"
 GUEST_USERNAME = "guest"
 NOT_AUTHENTICATED_ERROR = "Request could not be authenticated. No secure cookie found."
 NO_REFERER_ERROR = "The request header does not specify a referer and this is required for CORS access."
@@ -154,8 +153,9 @@ def _setGlobalVariables():
     colorama.init()
     # get the folder from this files path
     MARXAN_FOLDER = os.path.dirname(os.path.realpath(__file__)) + os.sep
+    print('MARXAN_FOLDER: ', MARXAN_FOLDER)
     # get the data in the server configuration file
-    serverData = _getKeyValuesFromFile(MARXAN_FOLDER + SERVER_CONFIG_FILENAME)
+    serverData = buildDataDict(MARXAN_FOLDER + 'config.json')
     # get the database connection string
     SERVER_NAME = _getDictValue(serverData, 'SERVER_NAME')
     SERVER_DESCRIPTION = _getDictValue(serverData, 'SERVER_DESCRIPTION')
@@ -169,8 +169,14 @@ def _setGlobalVariables():
     KEYFILE = _getDictValue(serverData, 'KEYFILE')
     DISABLE_SECURITY = _getDictValue(serverData, 'DISABLE_SECURITY')
     DISABLE_FILE_LOGGING = _getDictValue(serverData, 'DISABLE_FILE_LOGGING')
-    CONNECTION_STRING = "host='" + DATABASE_HOST + "' dbname='" + DATABASE_NAME + \
-        "' user='" + DATABASE_USER + "' password='" + DATABASE_PASSWORD + "'"
+
+    # CONNECTION_STRING = "host='" + DATABASE_HOST + "' dbname='" + DATABASE_NAME + \
+    #     "' user='" + DATABASE_USER + "' password='" + DATABASE_PASSWORD + "'"
+    # CONNECTION_STRING = "postgres://database:5432"
+    # CONNECTION_STRING = "postgres://postgres:oxen4chit@database:5432
+
+    # CONNECTION_STRING = "postgresql://postgres:oxen4chit@database/marxanserver"
+    CONNECTION_STRING = "postgres://postgres:oxen4chit@database/marxanserver"
     conn = psycopg2.connect(CONNECTION_STRING)
     cur = conn.cursor()
     cur.execute("SELECT version(), PostGIS_Version();")
@@ -238,7 +244,7 @@ def _setGlobalVariables():
         marxan_executable = "MarOpt_v243_Linux64"
         stopCmd = "Press CTRL+C to stop the server\n"
     # if the ogr2ogr executable path is not in the miniconda bin directory, then hard-code it here and uncomment the line
-    #OGR2OGR_PATH = ""
+    # OGR2OGR_PATH = ""
     OGR2OGR_EXECUTABLE = OGR2OGR_PATH + ogr2ogr_executable
     if not os.path.exists(OGR2OGR_EXECUTABLE):
         raise MarxanServicesError(" ogr2ogr executable:\t'" + OGR2OGR_EXECUTABLE +
@@ -276,6 +282,23 @@ def _setGlobalVariables():
         log("marxan-client is not installed\n", Fore.GREEN)
 
 
+def buildDataDict(filename):
+    if not os.path.exists(filename):
+        raise MarxanServicesError("The file '" + filename + "' does not exist")
+    # get the file contents
+    return_data = {}
+    with open(filename) as json_file:
+        data = json.load(json_file)
+        for (k, v) in data.items():
+            if v == "true":
+                v = True
+            if v == "false":
+                v = False
+            return_data[k] = v
+        return return_data
+    return {}
+
+
 # outputs a key: value from a dictionary into 2 columns with width w
 def _padDict(key, val, width):
     return key + (width - len(key))*" " + val
@@ -285,11 +308,13 @@ def _padDict(key, val, width):
 def log(_str, _color=Fore.RESET):
     if SHOW_START_LOG:
         # print to the console
-        print(_color + _str)
         if not DISABLE_FILE_LOGGING:
             # print to file
+            if type(_str) is tuple:
+                _str = "".join(_str)
             _writeFileUnicode(
-                MARXAN_FOLDER + MARXAN_LOG_FILE, _str + "\n", "a")
+                "".join([MARXAN_FOLDER, MARXAN_LOG_FILE]), _str, "a")
+            # MARXAN_FOLDER + MARXAN_LOG_FILE, _str + "\n", "a")
 
 
 # gets that method part of the REST service path, e.g. /marxan-server/validateUser will return validateUser
@@ -1060,7 +1085,9 @@ def _getKeys(s):
 
 # gets the key value combination from the text, e.g. PUNAME pu.dat
 def _getKeyValue(text, parameterName):
+    print('parameterName: ', parameterName)
     p1 = text.index(parameterName)
+    print('text[p1:]: ', text[p1:])
     # the end of line marker could either be a \r\n or a \n - get the position of both and see which is the first
     try:
         pCrLf = text[p1:].index("\r\n")
@@ -1247,7 +1274,7 @@ def _tilesetExists(tilesetid):
     url = "https://api.mapbox.com/tilesets/v1/" + \
         MAPBOX_USER + "." + tilesetid + "?access_token=" + MBAT
     try:
-        urllib.request.urlopen(url)
+        requests.get(url)
     except (Exception) as e:
         if (e.code == 404):
             return False
@@ -1757,22 +1784,12 @@ def _checkZippedShapefile(shapefile):
 
 
 def _getMBAT():
-    with urllib.request.urlopen(MARXAN_REGISTRY) as response:
-        data = response.read().decode("utf-8")
-        pos = data.find("MBAT")
-        if (pos == -1):
+    with open(MARXAN_REGISTRY_JSON) as json_file:
+        data = json.load(json_file)
+        mbat = data.get('MBAT')
+        if mbat is None:
             raise MarxanServicesError("MBAT not found in Marxan Registry")
-        else:
-            pos2 = data[pos:].find(";")
-            if (pos2 == -1):
-                raise MarxanServicesError("MBAT not found in Marxan Registry")
-            else:
-                mbat_line = data[pos:pos + pos2]
-                startPos = (mbat_line.find('"')) + 1
-                if (startPos == -1):
-                    raise MarxanServicesError(
-                        "MBAT not found in Marxan Registry")
-                return mbat_line[startPos:-1]
+        return mbat
 
 # imports a dataframe into a table - this is not part of the PostGIS class as it uses a different connection string - and it is not asynchronous
 
@@ -4101,8 +4118,10 @@ if __name__ == "__main__":
     try:
         # turn on tornado logging
         tornado.options.parse_command_line()
+        print("setting tornado options........")
         # set the global variables
         _setGlobalVariables()
+        print("Setting Global Variables......")
         # get the parent logger of all tornado loggers
         root_logger = logging.getLogger()
         # set the logging level
@@ -4131,6 +4150,7 @@ if __name__ == "__main__":
             SHUTDOWN_EVENT.set()
 
     except Exception as e:
+        print('e: ', e)
         if (e.args[0] == 98):
             log("The port " + str(PORT) + " is already in use")
         else:
