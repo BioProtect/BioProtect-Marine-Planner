@@ -36,7 +36,9 @@ RUN pip3 install -r requirements.txt
 
 # RUN ln -sf /proc/self/fd/1 /var/log/nginx/access.log && \
 #     ln -sf /proc/self/fd/1 /var/log/nginx/error.log
+ADD https://github.com/ufoscout/docker-compose-wait/releases/download/2.7.3/wait /wait
+RUN chmod +x /wait && chmod a+x marxan-server.py
 
 EXPOSE 80
 
-ENTRYPOINT ["python3", "marxan-server.py"]
+CMD /wait && python3 marxan-server.py

@@ -709,7 +709,11 @@ async def _getPlanningUnitsCostData(obj):
 
 # gets the data for the planning grids
 async def _getPlanningUnitGrids():
-    return await pg.query("SELECT feature_class_name ,alias ,description ,to_char(creation_date, 'DD/MM/YY HH24:MI:SS')::text AS creation_date ,country_id ,aoi_id,domain,_area,ST_AsText(envelope) envelope, pu.source, original_n country, created_by,tilesetid, planning_unit_count FROM marxan.metadata_planning_units pu LEFT OUTER JOIN marxan.gaul_2015_simplified_1km ON id_country = country_id order by lower(alias);", None, "Dict")
+    return await pg.query("""
+        SELECT feature_class_name ,alias ,description ,to_char(creation_date, 'DD/MM/YY HH24:MI:SS')::text AS creation_date ,
+        country_id ,aoi_id,domain,_area,ST_AsText(envelope) envelope, pu.source, original_n country, created_by,tilesetid, 
+        planning_unit_count FROM marxan.metadata_planning_units pu LEFT OUTER JOIN marxan.gaul_2015_simplified_1km ON id_country = country_id 
+        order by lower(alias);""", None, "Dict")
 
 
 # estimates the number of planning grid units in the passed country, area and domain
@@ -2290,7 +2294,6 @@ class getPlanningUnitGrids(MarxanRESTHandler):
 
 # imports a zipped planning unit shapefile which has been uploaded to the marxan root folder into PostGIS as a planning unit grid feature class
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/importPlanningUnitGrid?filename=pu_sample.zip&name=pu_test&description=wibble&callback=__jp5
-
 
 class importPlanningUnitGrid(MarxanRESTHandler):
     async def get(self):
