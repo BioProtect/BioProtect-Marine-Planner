@@ -1089,9 +1089,7 @@ def _getKeys(s):
 
 # gets the key value combination from the text, e.g. PUNAME pu.dat
 def _getKeyValue(text, parameterName):
-    print('parameterName: ', parameterName)
     p1 = text.index(parameterName)
-    print('text[p1:]: ', text[p1:])
     # the end of line marker could either be a \r\n or a \n - get the position of both and see which is the first
     try:
         pCrLf = text[p1:].index("\r\n")
@@ -2294,6 +2292,7 @@ class getPlanningUnitGrids(MarxanRESTHandler):
 
 # imports a zipped planning unit shapefile which has been uploaded to the marxan root folder into PostGIS as a planning unit grid feature class
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/importPlanningUnitGrid?filename=pu_sample.zip&name=pu_test&description=wibble&callback=__jp5
+
 
 class importPlanningUnitGrid(MarxanRESTHandler):
     async def get(self):
