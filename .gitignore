@@ -2,3 +2,4 @@ server.dat
 marxan-server.log
 users/admin/user.dat
 *.pyc
+/__pycache__/
