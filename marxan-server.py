@@ -113,8 +113,6 @@ DICT_PAD = 25  # text is right padded this much in dictionary outputs
 ####################################################################################################################################################################################################################################################################
 
 # run when the server starts to set all of the global path variables
-
-
 def _setGlobalVariables():
     global MBAT
     global MARXAN_FOLDER
@@ -156,6 +154,7 @@ def _setGlobalVariables():
     print('MARXAN_FOLDER: ', MARXAN_FOLDER)
     # get the data in the server configuration file
     serverData = buildDataDict(MARXAN_FOLDER + 'config.json')
+    print('serverData: ', serverData)
     # get the database connection string
     SERVER_NAME = _getDictValue(serverData, 'SERVER_NAME')
     SERVER_DESCRIPTION = _getDictValue(serverData, 'SERVER_DESCRIPTION')
