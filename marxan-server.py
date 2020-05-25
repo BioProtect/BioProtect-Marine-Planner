@@ -311,8 +311,7 @@ def log(_str, _color=Fore.RESET):
             # print to file
             if type(_str) is tuple:
                 _str = "".join(_str)
-            _writeFileUnicode(
-                "".join([MARXAN_FOLDER, MARXAN_LOG_FILE]), _str, "a")
+            _writeFileUnicode("".join([MARXAN_FOLDER, MARXAN_LOG_FILE]), _str, "a")
             # MARXAN_FOLDER + MARXAN_LOG_FILE, _str + "\n", "a")
 
 
