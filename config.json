@@ -3,7 +3,7 @@
   "SERVER_NAME": "database",
   "SERVER_DESCRIPTION": "marxanserver database",
   "COOKIE_RANDOM_VALUE": "67259876128763981763982170396198736",
-  "PERMITTED_DOMAINS": "*",
+  "PERMITTED_DOMAINS": "http://localhost",
   "DATABASE_NAME": "marxanserver",
   "DATABASE_HOST": "localhost",
   "DATABASE_USER": "postgres",
@@ -13,6 +13,6 @@
   "PORT": 80,
   "WDPA_VERSION": "August 2017",
   "PLANNING_GRID_UNITS_LIMIT": 100000,
-  "DISABLE_SECURITY": false,
+  "DISABLE_SECURITY": true,
   "DISABLE_FILE_LOGGING": false
 }

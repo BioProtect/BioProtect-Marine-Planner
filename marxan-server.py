@@ -167,6 +167,7 @@ def _setGlobalVariables():
     CERTFILE = _getDictValue(serverData, 'CERTFILE')
     KEYFILE = _getDictValue(serverData, 'KEYFILE')
     DISABLE_SECURITY = _getDictValue(serverData, 'DISABLE_SECURITY')
+    print('DISABLE_SECURITY: ', DISABLE_SECURITY)
     DISABLE_FILE_LOGGING = _getDictValue(serverData, 'DISABLE_FILE_LOGGING')
 
     # CONNECTION_STRING = "host='" + DATABASE_HOST + "' dbname='" + DATABASE_NAME + \
@@ -288,12 +289,14 @@ def buildDataDict(filename):
     return_data = {}
     with open(filename) as json_file:
         data = json.load(json_file)
+        print('data: ', data)
         for (k, v) in data.items():
             if v == "true":
                 v = True
             if v == "false":
                 v = False
             return_data[k] = v
+        print('return_data: ', return_data)
         return return_data
     return {}
 
@@ -625,6 +628,7 @@ def _getServerData(obj):
 # get the data on the user from the user.dat file
 def _getUserData(obj):
     data = _getKeyValuesFromFile(obj.folder_user + USER_DATA_FILENAME)
+    print('data: ', data)
     # set the userData attribute on this object
     obj.userData = data
 
@@ -676,13 +680,13 @@ async def _getSpeciesData(obj):
 # gets data for a single feature
 async def _getFeature(obj, oid):
     obj.data = await pg.query(
-        "SELECT oid::integer id,feature_class_name,alias,description,_area area,extent, to_char(creation_date, 'DD/MM/YY HH24:MI:SS')::text AS creation_date, tilesetid, source, created_by FROM marxan.metadata_interest_features WHERE oid=%s;",
+        "SELECT tableoid::integer id,feature_class_name,alias,description,_area area,extent, to_char(creation_date, 'DD/MM/YY HH24:MI:SS')::text AS creation_date, tilesetid, source, created_by FROM marxan.metadata_interest_features WHERE tableoid=%s;",
         [oid], "DataFrame")
 
 
 # get all species information from the PostGIS database
 async def _getAllSpeciesData(obj):
-    obj.allSpeciesData = await pg.query("SELECT oid::integer id,feature_class_name , alias , description , _area area, extent, to_char(creation_date, 'DD/MM/YY HH24:MI:SS')::text AS creation_date, tilesetid, source, created_by FROM marxan.metadata_interest_features ORDER BY lower(alias);", None, "DataFrame")
+    obj.allSpeciesData = await pg.query("SELECT tableoid::integer id,feature_class_name , alias , description , _area area, extent, to_char(creation_date, 'DD/MM/YY HH24:MI:SS')::text AS creation_date, tilesetid, source, created_by FROM marxan.metadata_interest_features ORDER BY lower(alias);", None, "DataFrame")
 
 
 # get the information about which species have already been preprocessed
@@ -1570,6 +1574,11 @@ def _requestIsWebSocket(request):
 def _checkCORS(obj):
     # no CORS policy if security is disabled or if the server is running on localhost or if the request is for a permitted method
     # or if the user is 'guest' (if this is enabled) - dont set any headers - this will only work for GET requests - cross-domwin POST requests must have the headers
+    print("In check CORS...........")
+    print('GUEST_USERNAME: ', GUEST_USERNAME)
+    print('obj.current_user: ', obj.current_user)
+    print('obj.request.host[:9]: ', obj.request.host[:9])
+    print('DISABLE_SECURITY: ', DISABLE_SECURITY)
     if (DISABLE_SECURITY or obj.request.host[:9] == "localhost" or (obj.current_user == GUEST_USERNAME)):
         return
     # set the CORS headers
@@ -1580,6 +1589,10 @@ def _checkCORS(obj):
 
 def _setCORS(obj):
     # get the referer
+    print('list(obj.request.headers.keys(): ', list(obj.request.headers.keys()))
+    print('PERMITTED_DOMAINS: ', PERMITTED_DOMAINS)
+    print('PERMITTED_METHODS: ', PERMITTED_METHODS)
+    print('_getRESTMethod(obj.request.path): ', _getRESTMethod(obj.request.path))
     if "Referer" in list(obj.request.headers.keys()):
         # get the referer url, e.g. https://marxan-client-blishten.c9users.io/ or https://beta.biopama.org/marxan-client/build/
         referer = obj.request.headers.get("Referer")
@@ -1588,6 +1601,7 @@ def _setCORS(obj):
         origin = parsed.scheme + "://" + parsed.netloc
         # get the method
         method = _getRESTMethod(obj.request.path)
+        
         # check the origin is permitted either by being in the list of permitted domains or if the referer and host are on the same machine, i.e. not cross domain - OR if a permitted method is being called
         if (origin in PERMITTED_DOMAINS) or (referer.find(obj.request.host_name) != -1) or (method in PERMITTED_METHODS):
             obj.set_header("Access-Control-Allow-Origin", origin)
@@ -1911,6 +1925,7 @@ class PostGIS():
     # imports a shapefile into PostGIS
     async def importShapefile(self, shapefile, feature_class_name, epsgCode, splitAtDateline=True):
         try:
+            print("Trying to import shapefile.......")
             # check that all the required files are present for the shapefile
             _checkZippedShapefile(MARXAN_FOLDER + shapefile)
             # drop the feature class if it already exists
@@ -1984,8 +1999,19 @@ class MarxanSubprocess(Popen):
 class MarxanRESTHandler(tornado.web.RequestHandler):
     # to prevent CORS errors in the client
     def set_default_headers(self):
-        if DISABLE_SECURITY:
-            self.set_header("Access-Control-Allow-Origin", "*")
+        print('set_default_headers: ')
+        print('DISABLE_SECURITY: ', DISABLE_SECURITY)
+        if DISABLE_SECURITY:    
+            # The value of the 'Access-Control-Allow-Origin' header in the response must not be the wildcard '*' when the request's credentials mode is 'include'
+            # self.set_header("Access-Control-Allow-Origin", "*")
+            self.set_header("Access-Control-Allow-Origin", "http://localhost")
+            # self.set_header("Content-Type", "application/json")
+            # self.set_header("Access-Control-Allow-Headers", "content-type")
+            self.set_header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS, PATCH, PUT')
+            self.set_header('Access-Control-Allow-Credentials', 'true')
+
+        # else: 
+
 
     # get the current user
     def get_current_user(self):
