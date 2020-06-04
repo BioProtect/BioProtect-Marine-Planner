@@ -151,11 +151,9 @@ def _setGlobalVariables():
     colorama.init()
     # get the folder from this files path
     MARXAN_FOLDER = os.path.dirname(os.path.realpath(__file__)) + os.sep
-    print('MARXAN_FOLDER: ', MARXAN_FOLDER)
     # get the data in the server configuration file
     serverData = buildDataDict(MARXAN_FOLDER + 'config.json')
-    print('serverData: ', serverData)
-    # get the database connection string
+        # get the database connection string
     SERVER_NAME = _getDictValue(serverData, 'SERVER_NAME')
     SERVER_DESCRIPTION = _getDictValue(serverData, 'SERVER_DESCRIPTION')
     DATABASE_NAME = _getDictValue(serverData, 'DATABASE_NAME')
@@ -167,15 +165,7 @@ def _setGlobalVariables():
     CERTFILE = _getDictValue(serverData, 'CERTFILE')
     KEYFILE = _getDictValue(serverData, 'KEYFILE')
     DISABLE_SECURITY = _getDictValue(serverData, 'DISABLE_SECURITY')
-    print('DISABLE_SECURITY: ', DISABLE_SECURITY)
     DISABLE_FILE_LOGGING = _getDictValue(serverData, 'DISABLE_FILE_LOGGING')
-
-    # CONNECTION_STRING = "host='" + DATABASE_HOST + "' dbname='" + DATABASE_NAME + \
-    #     "' user='" + DATABASE_USER + "' password='" + DATABASE_PASSWORD + "'"
-    # CONNECTION_STRING = "postgres://database:5432"
-    # CONNECTION_STRING = "postgres://postgres:oxen4chit@database:5432
-
-    # CONNECTION_STRING = "postgresql://postgres:oxen4chit@database/marxanserver"
     CONNECTION_STRING = "postgres://postgres:oxen4chit@database/marxanserver"
     conn = psycopg2.connect(CONNECTION_STRING)
     cur = conn.cursor()
@@ -286,18 +276,8 @@ def buildDataDict(filename):
     if not os.path.exists(filename):
         raise MarxanServicesError("The file '" + filename + "' does not exist")
     # get the file contents
-    return_data = {}
     with open(filename) as json_file:
-        data = json.load(json_file)
-        print('data: ', data)
-        for (k, v) in data.items():
-            if v == "true":
-                v = True
-            if v == "false":
-                v = False
-            return_data[k] = v
-        print('return_data: ', return_data)
-        return return_data
+        return json.load(json_file)
     return {}
 
 
@@ -327,6 +307,8 @@ def _getRESTMethod(path):
 
 
 # creates a new user
+# dont know about this. Saving users in files, no password hashing. 
+# **************************************************************** SORT THIS ****************************************************************
 def _createUser(obj, user, fullname, email, password):
     # get the list of users
     users = _getUsers()
@@ -348,18 +330,15 @@ def _createUser(obj, user, fullname, email, password):
 
 # gets a simple list of users
 def _getUsers():
+    not_user_folders = ["input", "output", "MarxanData", "MarxanData_unix"]
     # get a list of folders underneath the marxan users folder
     user_folders = glob.glob(MARXAN_USERS_FOLDER + "*/")
+    print('user_folders: ', user_folders)
     # convert these into a list of users
     users = [user[:-1][user[:-1].rfind(os.sep)+1:] for user in user_folders]
-    if "input" in users:
-        users.remove("input")
-    if "output" in users:
-        users.remove("output")
-    if "MarxanData" in users:
-        users.remove("MarxanData")
-    if "MarxanData_unix" in users:
-        users.remove("MarxanData_unix")
+    for folder in not_user_folders:
+        if folder in users:
+            users.remove(folder)
     return [u for u in users if u[:1] != "_"]
 
 
@@ -394,10 +373,6 @@ def _dismissNotification(obj, notificationid):
     ids = _getNotificationsData(obj)
     ids.append(notificationid)
     _writeFileUnicode(obj.folder_user + NOTIFICATIONS_FILENAME, ",".join(ids))
-
-
-def _resetNotifications(obj):
-    _writeFileUnicode(obj.folder_user + NOTIFICATIONS_FILENAME, "")
 
 
 # returns the project name without spaces or other invalid characters
@@ -501,7 +476,6 @@ def _setFolderPaths(obj, arguments):
             obj.folder_input = obj.folder_project + "input" + os.sep
             obj.folder_output = obj.folder_project + "output" + os.sep
             obj.project = obj.get_argument("project")
-
 
 # get the project data from the input.dat file as a categorised list of settings - using the obj.folder_project path and creating an attribute called projectData in the obj for the return data
 async def _getProjectData(obj):
@@ -628,7 +602,6 @@ def _getServerData(obj):
 # get the data on the user from the user.dat file
 def _getUserData(obj):
     data = _getKeyValuesFromFile(obj.folder_user + USER_DATA_FILENAME)
-    print('data: ', data)
     # set the userData attribute on this object
     obj.userData = data
 
@@ -636,8 +609,7 @@ def _getUserData(obj):
 # get the species data from the spec.dat file as a DataFrame (and joins it to the data from the PostGIS database if it is the Marxan web version)
 async def _getSpeciesData(obj):
     # get the values from the spec.dat file - speciesDataFilename will be empty if it doesn't exist yet
-    df = await _getProjectInputData(obj,
-                                    "SPECNAME")
+    df = await _getProjectInputData(obj, "SPECNAME")
     # create the output data frame using the id field as an index
     output_df = df.set_index("id")
     # add the index as a column
@@ -872,15 +844,13 @@ async def _updateSpeciesFile(obj, interest_features, target_values, spf_values, 
     # write the data to file
     await _writeCSV(obj, "SPECNAME", new_df)
 
+
 # create the array of the puids
-
-
 def _puidsArrayToPuDatFormat(puid_array, pu_status):
     return pandas.DataFrame([[int(i), pu_status] for i in puid_array], columns=['id', 'status_new']).astype({'id': 'int64', 'status_new': 'int64'})
 
+
 # creates the pu.dat file using the ids from the PostGIS feature class as the planning unit ids in the pu.dat file
-
-
 async def _createPuFile(obj, planning_grid_name):
     # get the path to the pu.dat file
     filename = obj.folder_input + PLANNING_UNITS_FILENAME
@@ -890,9 +860,8 @@ async def _createPuFile(obj, planning_grid_name):
     _updateParameters(obj.folder_project + PROJECT_DATA_FILENAME,
                       {'PUNAME': PLANNING_UNITS_FILENAME})
 
+
 # updates the pu.dat file with the passed arrays of ids for the various statuses
-
-
 async def _updatePuFile(obj, status1_ids, status2_ids, status3_ids):
     status1 = _puidsArrayToPuDatFormat(status1_ids, 1)
     status2 = _puidsArrayToPuDatFormat(status2_ids, 2)
@@ -924,8 +893,7 @@ def _loadCSV(filename, errorIfNotExists=False):
         df = pandas.read_csv(filename, sep=None, engine='python')
     else:
         if errorIfNotExists:
-            raise MarxanServicesError(
-                "The file '" + filename + "' does not exist")
+            raise MarxanServicesError("The file '" + filename + "' does not exist")
         else:
             df = pandas.DataFrame()
     return df
@@ -1206,9 +1174,8 @@ def _getIntArrayFromArg(arguments, argName):
     else:
         return []
 
+
 # creates a zip file with the list of files in the folder with the filename zipfilename
-
-
 def _createZipfile(lstFileNames, folder, zipfilename):
     with zipfile.ZipFile(folder + zipfilename, 'w') as myzip:
         for f in lstFileNames:
@@ -1225,9 +1192,8 @@ def _deleteZippedShapefile(folder, zipfile, archivename):
     if (zipfile != "" and os.path.exists(folder + zipfile)):
         os.remove(folder + zipfile)
 
+
 # unzips a zip file and returns the rootname - if rejectMultipleShapefiles is True then an exception will be thrown if the zip file contains multiple shapefiles -  if searchTerm is specified then only the files that match the searchTerm will be extracted
-
-
 def _unzipFile(filename, rejectMultipleShapefiles=True, searchTerm=None):
     # unzip the shapefile
     if not os.path.exists(MARXAN_FOLDER + filename):
@@ -1271,9 +1237,8 @@ def _unzipFile(filename, rejectMultipleShapefiles=True, searchTerm=None):
         raise MarxanServicesError("The zipped file should not contain directories. See <a href='" +
                                   DOCS_ROOT + "/user.html#importing-existing-marxan-projects' target='blank'>here</a>")
 
+
 # checks to see if the tileset already exists on mapbox
-
-
 def _tilesetExists(tilesetid):
     url = "https://api.mapbox.com/tilesets/v1/" + \
         MAPBOX_USER + "." + tilesetid + "?access_token=" + MBAT
@@ -1285,9 +1250,8 @@ def _tilesetExists(tilesetid):
     else:
         return True
 
+
 # starts an upload job to mapbox from the passed feature class and returns the uploadid
-
-
 async def _uploadTilesetToMapbox(feature_class_name, mapbox_layer_name):
     if (_tilesetExists(feature_class_name)):
         return "0"
@@ -1322,9 +1286,8 @@ async def _uploadTilesetToMapbox(feature_class_name, mapbox_layer_name):
         MARXAN_FOLDER, feature_class_name + ".zip", feature_class_name)
     return uploadId
 
+
 # uploads a tileset to mapbox using the filename of the file (filename) to upload and the name of the resulting tileset (_name)
-
-
 def _uploadTileset(filename, _name):
     # create an instance of the upload service
     service = Uploader(access_token=MBAT)
@@ -1333,17 +1296,15 @@ def _uploadTileset(filename, _name):
         upload_id = upload_resp.json()['id']
         return upload_id
 
+
 # deletes a tileset
-
-
 def _deleteTileset(tilesetid):
     url = "https://api.mapbox.com/tilesets/v1/" + \
         MAPBOX_USER + "." + tilesetid + "?access_token=" + MBAT
     response = requests.delete(url)
 
+
 # deletes a feature
-
-
 async def _deleteFeature(feature_class_name):
     # get the data for the feature
     data = await pg.query("SELECT oid, created_by FROM marxan.metadata_interest_features WHERE feature_class_name = %s;", [feature_class_name], "Dict")
@@ -1378,9 +1339,8 @@ def _getUniqueFeatureclassName(prefix):
     # mapbox tileset ids are limited to 32 characters
     return prefix + uuid.uuid4().hex[:(32 - len(prefix))]
 
+
 # finishes a feature import by adding a spatial index and a record in the metadata_interest_features table
-
-
 async def _finishImportingFeature(feature_class_name, name, description, source, user):
     # get the Mapbox tilesetId
     tilesetId = MAPBOX_USER + "." + feature_class_name
@@ -1400,9 +1360,8 @@ async def _finishImportingFeature(feature_class_name, name, description, source,
             raise MarxanServicesError(e.args[0])
     return id[0]
 
+
 # imports the planning unit grid from a zipped shapefile (given by filename) and starts the upload to Mapbox
-
-
 async def _importPlanningUnitGrid(filename, name, description, user):
     # unzip the shapefile and get the name of the shapefile without an extension, e.g. PlanningUnitsData.zip -> planningunits.shp -> planningunits
     rootfilename = await IOLoop.current().run_in_executor(None, _unzipFile, filename)
@@ -1443,9 +1402,8 @@ async def _importPlanningUnitGrid(filename, name, description, user):
         pass
     return {'feature_class_name': feature_class_name, 'uploadId': uploadId, 'alias': name}
 
+
 # deletes a planning grid
-
-
 async def _deletePlanningUnitGrid(planning_grid):
     # get the data for the planning grid
     data = await pg.query("SELECT created_by, source FROM marxan.metadata_planning_units WHERE feature_class_name = %s;", [planning_grid], "Dict")
@@ -1471,9 +1429,8 @@ async def _deletePlanningUnitGrid(planning_grid):
     # delete the feature class
     await pg.execute(sql.SQL("DROP TABLE IF EXISTS marxan.{};").format(sql.Identifier(planning_grid)))
 
+
 # searches the folder recursively for the filename and returns an array of full filenames, e.g. ['/home/ubuntu/environment/marxan-server/users/admin/British Columbia Marine Case Study/input/spec.dat', etc]
-
-
 def _getFilesInFolderRecursive(folder, filename):
     foundFiles = []
     for root, dirs, files in os.walk(MARXAN_USERS_FOLDER):
@@ -1482,18 +1439,16 @@ def _getFilesInFolderRecursive(folder, filename):
             foundFiles.append(_files[0])
     return foundFiles
 
+
 # searches the dataframe to see whether the value occurs in the column
-
-
 def _dataFrameContainsValue(df, column_name, value):
     if (value in df[column_name].values):
         return True
     else:
         return False
 
+
 # returns a list of projects that contain the feature with the passed featureId
-
-
 def _getProjectsForFeature(featureId):
     specDatFiles = _getFilesInFolderRecursive(MARXAN_USERS_FOLDER, "spec.dat")
     projects = []
@@ -1515,9 +1470,8 @@ def _getProjectsForFeature(featureId):
                     projects.append({'user': prjPaths[0], 'name': prjPaths[1]})
     return projects
 
+
 # returns a list of projects that use the planning grid
-
-
 def _getProjectsForPlanningGrid(feature_class_name):
     inputDatFiles = _getFilesInFolderRecursive(
         MARXAN_USERS_FOLDER, "input.dat")
@@ -1532,9 +1486,8 @@ def _getProjectsForPlanningGrid(feature_class_name):
                 projects.append({'user': prjPaths[0], 'name': prjPaths[1]})
     return projects
 
+
 # populates the data in the feature_preprocessing.dat file from an existing puvspr.dat file, e.g. after an import from an old version of Marxan
-
-
 async def _createFeaturePreprocessingFileFromImport(obj):
     # load the puvspr data
     df = await _getProjectInputData(obj, "PUVSPRNAME")
@@ -1556,9 +1509,8 @@ async def _createFeaturePreprocessingFileFromImport(obj):
     pivotted.to_csv(obj.folder_input +
                     FEATURE_PREPROCESSING_FILENAME, index=False)
 
+
 # detects whether the request is for a websocket from a tornado.httputil.HTTPServerRequest
-
-
 def _requestIsWebSocket(request):
     if "upgrade" in request.headers:
         if request.headers["upgrade"] == "websocket":
@@ -1568,9 +1520,8 @@ def _requestIsWebSocket(request):
     else:
         return True
 
+
 # to prevent CORS errors in the client
-
-
 def _checkCORS(obj):
     # no CORS policy if security is disabled or if the server is running on localhost or if the request is for a permitted method
     # or if the user is 'guest' (if this is enabled) - dont set any headers - this will only work for GET requests - cross-domwin POST requests must have the headers
@@ -1584,10 +1535,11 @@ def _checkCORS(obj):
     # set the CORS headers
     _setCORS(obj)
 
+
 # sets the CORS headers
-
-
 def _setCORS(obj):
+    print('obj: ', obj)
+    print('obj.request: ', obj.request)
     # get the referer
     print('list(obj.request.headers.keys(): ', list(obj.request.headers.keys()))
     print('PERMITTED_DOMAINS: ', PERMITTED_DOMAINS)
@@ -1613,9 +1565,8 @@ def _setCORS(obj):
     else:
         raise HTTPError(403, NO_REFERER_ERROR)
 
+
 # test all requests to make sure the user is authenticated - if not returns a 403
-
-
 def _authenticate(obj):
     if DISABLE_SECURITY:
         return
@@ -1624,9 +1575,8 @@ def _authenticate(obj):
         # if not return a 401
         raise HTTPError(401, NOT_AUTHENTICATED_ERROR)
 
+
 # tests the role has access to the method
-
-
 def _authoriseRole(obj, method):
     if DISABLE_SECURITY:
         return
@@ -1638,9 +1588,8 @@ def _authoriseRole(obj, method):
         raise HTTPError(403, "The '" + role +
                         "' role does not have permission to access the '" + method + "' service")
 
+
 # tests if the user can access the service - Admin users can access projects belonging to other users
-
-
 def _authoriseUser(obj):
     if DISABLE_SECURITY:
         return
@@ -1654,17 +1603,15 @@ def _authoriseUser(obj):
                 raise HTTPError(403, "The user '" + obj.current_user +
                                 "' has no permission to access a project of another user")
 
+
 # returns a boolean indicating whether the guest user is enabled on this server
-
-
 def _guestUserEnabled(obj):
     _getServerData(obj)
     # get the current state
     return obj.serverData['ENABLE_GUEST_USER']
 
+
 # returns true if the passed shapefile has the fieldname - this is case sensitive
-
-
 def _shapefileHasField(shapefile, fieldname):
     # check that all the required files are present for the shapefile
     _checkZippedShapefile(shapefile)
@@ -1672,9 +1619,8 @@ def _shapefileHasField(shapefile, fieldname):
     fieldnames = _getShapefileFieldNames(shapefile)
     return fieldname in fieldnames
 
+
 # gets the names of the fields in a shapefile
-
-
 def _getShapefileFieldNames(shapefile):
     fieldnames = []
     ogr.UseExceptions()
@@ -1693,18 +1639,16 @@ def _getShapefileFieldNames(shapefile):
             fieldnames.append(layerDefinition.GetFieldDefn(i).GetName())
         return fieldnames
 
+
 # returns True if the users project is currently running
-
-
 def _isProjectRunning(user, project):
     # get the data from the run log file
     df = _loadCSV(MARXAN_FOLDER + RUN_LOG_FILENAME)
     # filter for running projects from the passed user and project
     return not df.loc[(df['status'] == 'Running') & (df["user"] == user) & (df["project"] == project)].empty
 
+
 # gets the data from the run log as a dataframe
-
-
 def _getRunLogs():
     # get the data from the run log file
     df = _loadCSV(MARXAN_FOLDER + RUN_LOG_FILENAME)
@@ -1724,24 +1668,21 @@ def _getRunLogs():
             df.loc[i, 'runs'][df.loc[i, 'runs'].find("/"):]
     return df
 
+
 # gets the number of runs required from the input.dat file
-
-
 async def _getNumberOfRunsRequired(obj):
     if not hasattr(obj, "projectData"):
         await _getProjectData(obj)
     return [int(s['value']) for s in obj.projectData['runParameters'] if s['key'] == 'NUMREPS'][0]
 
+
 # gets the number of runs completed from the output files
-
-
 def _getNumberOfRunsCompleted(obj):
     files = glob.glob(obj.folder_output + "output_r*")
     return len(files)
 
+
 # updates the run log with the details of the marxan job when it has stopped for whatever reason - endtime, runtime, runs and status are updated
-
-
 def _updateRunLog(pid, startTime, numRunsCompleted, numRunsRequired, status):
     # load the run log
     df = _getRunLogs()
@@ -1776,9 +1717,8 @@ def _debugSQLStatement(sql, connection):
     else:
         logging.debug(sql.as_string(connection))
 
+
 # checks that all the necessary files in the shapefile are present - if not raises an error
-
-
 def _checkZippedShapefile(shapefile):
     # check there are any files present
     files = glob.glob(shapefile[:-4] + "*")
@@ -1805,9 +1745,8 @@ def _getMBAT():
             raise MarxanServicesError("MBAT not found in Marxan Registry")
         return mbat
 
+
 # imports a dataframe into a table - this is not part of the PostGIS class as it uses a different connection string - and it is not asynchronous
-
-
 def _importDataFrame(df, table_name):
     engine_text = 'postgresql://' + DATABASE_USER + ':' + \
         DATABASE_PASSWORD + '@' + DATABASE_HOST + '/' + DATABASE_NAME
@@ -1835,11 +1774,11 @@ def _deleteShutdownFile():
         print("Deleting the shutdown file")
         os.remove(MARXAN_FOLDER + SHUTDOWN_FILENAME)
 
+
+
 ####################################################################################################################################################################################################################################################################
 # generic classes
 ####################################################################################################################################################################################################################################################################
-
-
 class MarxanServicesError(Exception):
     def __init__(self, *args, **kwargs):
         super(MarxanServicesError, self)
@@ -1848,11 +1787,10 @@ class MarxanServicesError(Exception):
 class ExtendableObject(object):
     pass
 
+
 ####################################################################################################################################################################################################################################################################
 # class to return data from postgis asynchronously
 ####################################################################################################################################################################################################################################################################
-
-
 class PostGIS():
     def __init__(self, pool):
         self.pool = pool
@@ -1931,9 +1869,16 @@ class PostGIS():
             # drop the feature class if it already exists
             await self.execute(sql.SQL("DROP TABLE IF EXISTS marxan.{};").format(sql.Identifier(feature_class_name)))
             # using ogr2ogr produces an additional field - the ogc_fid field which is an autonumbering oid. Here we import into the marxan schema and rename the geometry field from the default (wkb_geometry) to geometry
-            cmd = '"' + OGR2OGR_EXECUTABLE + '" -f "PostgreSQL" PG:"host=' + DATABASE_HOST + ' user=' + DATABASE_USER + ' dbname=' + DATABASE_NAME + ' password=' + DATABASE_PASSWORD + \
-                '" "' + MARXAN_FOLDER + shapefile + '" -nlt GEOMETRY -lco SCHEMA=marxan -lco GEOMETRY_NAME=geometry -nln ' + \
+            cmd = '"' + \
+                OGR2OGR_EXECUTABLE + '" -f "PostgreSQL" PG:"host=' + \
+                DATABASE_HOST + ' user=' + \
+                DATABASE_USER + ' dbname=' + \
+                DATABASE_NAME + ' password=' + \
+                DATABASE_PASSWORD + '" "' + \
+                MARXAN_FOLDER + shapefile + \
+                '" -nlt GEOMETRY -lco SCHEMA=marxan -lco GEOMETRY_NAME=geometry -nln ' + \
                 feature_class_name + ' -t_srs ' + epsgCode + ' -lco precision=NO'
+
             logging.debug(cmd)
             if platform.system() != "Windows":
                 # run the import as an asyncronous subprocess
@@ -1941,9 +1886,9 @@ class PostGIS():
                 result = await process.wait()
             else:
                 # run the import using the python subprocess module
-                resultBytes = subprocess.check_output(
-                    cmd, shell=True, stderr=subprocess.STDOUT)
+                resultBytes = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
                 result = 0 if (resultBytes.decode("utf-8") == '') else -1
+            
             if result == 0:
                 # split the feature class at the dateline
                 if (splitAtDateline):
@@ -1970,11 +1915,10 @@ class PostGIS():
     async def createPrimaryKey(self, feature_class_name, column):
         await self.execute(sql.SQL("ALTER TABLE marxan.{tbl} ADD CONSTRAINT {key} PRIMARY KEY ({col});").format(tbl=sql.Identifier(feature_class_name), key=sql.Identifier("idx_" + uuid.uuid4().hex), col=sql.Identifier(column)))
 
+
 ####################################################################################################################################################################################################################################################################
 # subclass of Popen to allow registering callbacks when processes complete on Windows (tornado.process.Subprocess.set_exit_callback is not supported on Windows)
 ####################################################################################################################################################################################################################################################################
-
-
 class MarxanSubprocess(Popen):
     # registers a callback function on Windows by creating another thread and polling the process to see when it is finished
     def set_exit_callback_windows(self, callback, *args, **kwargs):
@@ -1991,11 +1935,10 @@ class MarxanSubprocess(Popen):
         # free the thread memory
         self._thread = None
 
+
 ####################################################################################################################################################################################################################################################################
 # baseclass for handling REST requests
 ####################################################################################################################################################################################################################################################################
-
-
 class MarxanRESTHandler(tornado.web.RequestHandler):
     # to prevent CORS errors in the client
     def set_default_headers(self):
@@ -2017,6 +1960,7 @@ class MarxanRESTHandler(tornado.web.RequestHandler):
     def get_current_user(self):
         if self.get_secure_cookie("user"):
             return self.get_secure_cookie("user").decode("utf-8")
+
 
     # called before the request is processed - does the neccessary authentication/authorisation
     def prepare(self):
@@ -2085,20 +2029,18 @@ class MarxanRESTHandler(tornado.web.RequestHandler):
     # def log_exception(self, typ, value, tb): # uncomment if unit testing
     #     pass
 
+
 ####################################################################################################################################################################################################################################################################
 # RequestHandler subclasses
 ####################################################################################################################################################################################################################################################################
-
-
 class methodNotFound(MarxanRESTHandler):
     def prepare(self):
         # return a 501 - Not implemented
         raise tornado.web.HTTPError(
             501, "The method is not supported or the parameters are wrong on this Marxan Server " + MARXAN_SERVER_VERSION)
 
+
 # toggles whether the guest user is enabled or not on this server
-
-
 class toggleEnableGuestUser(MarxanRESTHandler):
     def get(self):
         _getServerData(self)
@@ -2113,10 +2055,9 @@ class toggleEnableGuestUser(MarxanRESTHandler):
         # set the response
         self.send_response({'enabled': not enabled})
 
+
 # creates a new user
 # POST ONLY
-
-
 class createUser(MarxanRESTHandler):
     def post(self):
         # validate the input arguments
@@ -2135,10 +2076,9 @@ class createUser(MarxanRESTHandler):
         self.send_response(
             {'info': "User '" + self.get_argument('user') + "' created"})
 
+
 # creates a project
 # POST ONLY
-
-
 class createProject(MarxanRESTHandler):
     async def post(self):
         # validate the input arguments
@@ -2157,10 +2097,9 @@ class createProject(MarxanRESTHandler):
         self.send_response({'info': "Project '" + self.get_argument('project') + "' created",
                             'name': self.get_argument('project'), 'user': self.get_argument('user')})
 
+
 # creates a simple project for the import wizard
 # POST ONLY
-
-
 class createImportProject(MarxanRESTHandler):
     def post(self):
         # validate the input arguments
@@ -2171,10 +2110,9 @@ class createImportProject(MarxanRESTHandler):
         self.send_response({'info': "Project '" + self.get_argument('project') +
                             "' created", 'name': self.get_argument('project')})
 
+
 # updates a project from the Marxan old version to the new version
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/upgradeProject?user=andrew&project=test2&callback=__jp7
-
-
 class upgradeProject(MarxanRESTHandler):
     async def get(self):
         # validate the input arguments
@@ -2201,10 +2139,9 @@ class upgradeProject(MarxanRESTHandler):
         self.send_response({'info': "Project '" + self.get_argument("project") +
                             "' updated", 'project': self.get_argument("project")})
 
+
 # deletes a project
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/deleteProject?user=andrew&project=test2&callback=__jp7
-
-
 class deleteProject(MarxanRESTHandler):
     async def get(self):
         # validate the input arguments
@@ -2218,10 +2155,9 @@ class deleteProject(MarxanRESTHandler):
         self.send_response({'info': "Project '" + self.get_argument("project") +
                             "' deleted", 'project': self.get_argument("project")})
 
+
 # clones the project
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/cloneProject?user=admin&project=Start%20project&callback=__jp15
-
-
 class cloneProject(MarxanRESTHandler):
     def get(self):
         # validate the input arguments
@@ -2232,10 +2168,9 @@ class cloneProject(MarxanRESTHandler):
         self.send_response(
             {'info': "Project '" + clonedName + "' created", 'name': clonedName})
 
+
 # creates n clones of the project with a range of BLM values in the _clumping folder
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/createProjectGroup?user=admin&project=Start%20project&copies=5&blmValues=0.1,0.2,0.3,0.4,0.5&callback=__jp15
-
-
 class createProjectGroup(MarxanRESTHandler):
     def get(self):
         # validate the input arguments
@@ -2261,10 +2196,9 @@ class createProjectGroup(MarxanRESTHandler):
         # set the response
         self.send_response({'info': "Project group created", 'data': projects})
 
+
 # deletes a project cluster
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/deleteProjects?projectNames=2dabf1b862da4c2e87b2cd9d8b38bb73,81eda0a43a3248a8b4881caae160667a,313b0d3f733142e3949cf6129855be19,739f40f4d1c94907b2aa814470bcd7f7,15210235bec341238a816ce43eb2b341&callback=__jp15
-
-
 class deleteProjects(MarxanRESTHandler):
     def get(self):
         # validate the input arguments
@@ -2278,10 +2212,9 @@ class deleteProjects(MarxanRESTHandler):
         # set the response
         self.send_response({'info': "Projects deleted"})
 
+
 # renames a project
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/renameProject?user=andrew&project=Tonga%20marine%2030km2&newName=Tonga%20marine%2030km&callback=__jp5
-
-
 class renameProject(MarxanRESTHandler):
     def get(self):
         # validate the input arguments
@@ -2297,27 +2230,24 @@ class renameProject(MarxanRESTHandler):
         self.send_response({"info": "Project renamed to '" + self.get_argument(
             "newName") + "'", 'project': self.get_argument("project")})
 
+
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getCountries?callback=__jp0
-
-
 class getCountries(MarxanRESTHandler):
     async def get(self):
         content = await pg.query("SELECT t.iso3, t.name_iso31, CASE WHEN m.iso3 IS NULL THEN False ELSE True END has_marine FROM marxan.gaul_2015_simplified_1km t LEFT JOIN marxan.eez_simplified_1km m on t.iso3 = m.iso3 WHERE t.iso3 NOT LIKE '%|%' ORDER BY lower(t.name_iso31);", None, "Dict")
         self.send_response({'records': content})
 
+
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getPlanningUnitGrids?callback=__jp0
-
-
 class getPlanningUnitGrids(MarxanRESTHandler):
     async def get(self):
         planningUnitGrids = await _getPlanningUnitGrids()
         self.send_response({'info': 'Planning unit grids retrieved',
                             'planning_unit_grids': planningUnitGrids})
 
+
 # imports a zipped planning unit shapefile which has been uploaded to the marxan root folder into PostGIS as a planning unit grid feature class
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/importPlanningUnitGrid?filename=pu_sample.zip&name=pu_test&description=wibble&callback=__jp5
-
-
 class importPlanningUnitGrid(MarxanRESTHandler):
     async def get(self):
         # validate the input arguments
@@ -2329,9 +2259,8 @@ class importPlanningUnitGrid(MarxanRESTHandler):
         self.send_response({'info': "Planning grid '" + self.get_argument('name') + "' imported",
                             'feature_class_name': data['feature_class_name'], 'uploadId': data['uploadId'], 'alias': data['alias']})
 
+
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/deletePlanningUnitGrid?planning_grid_name=pu_f9609f7a4cb0406e8bea4bfa00772&callback=__jp10
-
-
 class deletePlanningUnitGrid(MarxanRESTHandler):
     async def get(self):
         # validate the input arguments
@@ -2341,10 +2270,9 @@ class deletePlanningUnitGrid(MarxanRESTHandler):
         # set the response
         self.send_response({'info': 'Planning grid deleted'})
 
+
 # validates a user with the passed credentials
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/validateUser?user=andrew&password=thargal88&callback=__jp2
-
-
 class validateUser(MarxanRESTHandler):
     def get(self):
         # validate the input arguments
@@ -2374,10 +2302,9 @@ class validateUser(MarxanRESTHandler):
             # invalid login
             raise MarxanServicesError("Invalid login")
 
+
 # logs the user out and resets the cookies
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/logout?callback=__jp2
-
-
 class logout(MarxanRESTHandler):
     def get(self):
         self.clear_cookie("user")
@@ -2385,9 +2312,8 @@ class logout(MarxanRESTHandler):
         # set the response
         self.send_response({'info': "User logged out"})
 
+
 # resends the password to the passed email address (NOT CURRENTLY IMPLEMENTED)
-
-
 class resendPassword(MarxanRESTHandler):
     def get(self):
         # set the response
@@ -2411,10 +2337,9 @@ class getUser(MarxanRESTHandler):
         self.send_response({'info': "User data received", "userData": {k: v for k, v in self.userData.items(
         ) if k != 'PASSWORD'}, "unauthorisedMethods": unauthorised, 'dismissedNotifications': ids})
 
+
 # gets a list of all users
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getUsers
-
-
 class getUsers(MarxanRESTHandler):
     def get(self):
         # get the users
@@ -2424,10 +2349,9 @@ class getUsers(MarxanRESTHandler):
         # set the response
         self.send_response({'info': 'Users data received', 'users': usersData})
 
+
 # deletes a user
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/deleteUser?user=asd2
-
-
 class deleteUser(MarxanRESTHandler):
     def get(self):
         # validate the input arguments
@@ -2436,10 +2360,9 @@ class deleteUser(MarxanRESTHandler):
         # set the response
         self.send_response({'info': 'User deleted'})
 
+
 # gets project information from the input.dat file
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getProject?user=admin&project=Start%20project&callback=__jp2
-
-
 class getProject(MarxanRESTHandler):
     async def get(self):
         # validate the input arguments
@@ -2476,6 +2399,7 @@ class getProject(MarxanRESTHandler):
             # set the response
             self.send_response({'user': self.get_argument("user"), 'project': self.projectData["project"], 'metadata': self.projectData["metadata"], 'files': self.projectData["files"], 'runParameters': self.projectData["runParameters"], 'renderer': self.projectData["renderer"], 'features': self.speciesData.to_dict(
                 orient="records"), 'feature_preprocessing': self.speciesPreProcessingData.to_dict(orient="split")["data"], 'planning_units': self.planningUnitsData, 'protected_area_intersections': self.protectedAreaIntersectionsData})
+
 
 # gets feature information from postgis
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getFeature?oid=63407942&callback=__jp2
@@ -2571,6 +2495,7 @@ class getPlanningUnitsCostData(MarxanRESTHandler):
         await _getPlanningUnitsCostData(self)
         # set the response
         self.send_response({"data": self.planningUnitsData})
+
 
 # gets the intersections of the planning units with the protected areas from the protected_area_intersections.dat file
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getProtectedAreaIntersectionsData?user=admin&project=Start%20project&callback=__jp2
@@ -3098,8 +3023,8 @@ class dismissNotification(MarxanRESTHandler):
 
 class resetNotifications(MarxanRESTHandler):
     def get(self):
-        # reset the notification
-        _resetNotifications(self)
+        # reset the notification - this used to be a function but it seemed unneccessary so now its o just this line of code. 
+        _writeFileUnicode(self.folder_user + NOTIFICATIONS_FILENAME, "")
         self.send_response({'info': "Notifications reset"})
 
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/deleteGapAnalysis?user=admin&project=Start%20project
@@ -4005,9 +3930,11 @@ class Application(tornado.web.Application):
     def __init__(self, _pool):
         # this attribute is used by QueryWebSocketHandler descendent classes to get a pointer to the connection pool and a PID of the query
         self.pool = _pool
+        print('_pool: ', _pool)
         # global variable to hold the postgis connection pool
         global pg
         pg = PostGIS(_pool)
+        print('pg: ', pg.__dict__)
         handlers = [
             ("/marxan-server/getServerData", getServerData),
             ("/marxan-server/getProjects", getProjects),
@@ -4111,15 +4038,14 @@ async def main():
         app = Application(pool)
         # start listening on whichever port, and if there is an https certificate then use the certificate information from the server.dat file to return data securely
         if CERTFILE != "None":
-            app.listen(PORT, ssl_options={
-                       "certfile": CERTFILE, "keyfile": KEYFILE})
+            app.listen(PORT, ssl_options={ "certfile": CERTFILE, "keyfile": KEYFILE})
             navigateTo = "https://"
         else:
             app.listen(PORT)
             navigateTo = "http://"
+
         navigateTo = navigateTo + "<host>:" + PORT + \
-            "/index.html" if (PORT != '80') else navigateTo + \
-            "<host>/index.html"
+            "/index.html" if (PORT != '80') else navigateTo + "<host>/index.html"
         # open the web browser if the call includes a url, e.g. python marxan-server.py http://localhost/index.html
         if len(sys.argv) > 1:
             if MARXAN_CLIENT_VERSION == "Not installed":
