@@ -465,14 +465,16 @@ def _cloneProject(source_folder, destination_folder):
 # sets the various paths to the users folder and project folders using the request arguments in the passed object
 def _setFolderPaths(obj, arguments):
     if "user" in list(arguments.keys()):
-        # argument values are bytes
+        # argument values are bytes but not always for projects for some reason...
         user = arguments["user"][0].decode("utf-8")
         obj.folder_user = MARXAN_USERS_FOLDER + user + os.sep
         obj.user = user
         # get the project folder and the input and output folders
         if "project" in list(arguments.keys()):
-            obj.folder_project = obj.folder_user + \
-                arguments["project"][0].decode("utf-8") + os.sep
+            proj = arguments["project"][0]
+            if type(proj) is not str:
+                proj = proj.decode("utf-8")
+            obj.folder_project = obj.folder_user + proj + os.sep
             obj.folder_input = obj.folder_project + "input" + os.sep
             obj.folder_output = obj.folder_project + "output" + os.sep
             obj.project = obj.get_argument("project")
@@ -2403,8 +2405,6 @@ class getProject(MarxanRESTHandler):
 
 # gets feature information from postgis
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getFeature?oid=63407942&callback=__jp2
-
-
 class getFeature(MarxanRESTHandler):
     async def get(self):
         # validate the input arguments
@@ -2414,10 +2414,9 @@ class getFeature(MarxanRESTHandler):
         # set the response
         self.send_response({"data": self.data.to_dict(orient="records")})
 
+
 # gets the features planning unit ids from the puvspr.dat file
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getFeaturePlanningUnits?user=andrew&project=Tonga%20marine%2030Km2&oid=63407942&callback=__jp2
-
-
 class getFeaturePlanningUnits(MarxanRESTHandler):
     async def get(self):
         # validate the input arguments
@@ -2430,10 +2429,9 @@ class getFeaturePlanningUnits(MarxanRESTHandler):
         # set the response
         self.send_response({"data": puids})
 
+
 # gets species information for a specific project from the spec.dat file
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getSpeciesData?user=admin&project=Start%20project&callback=__jp3
-
-
 class getSpeciesData(MarxanRESTHandler):
     async def get(self):
         # validate the input arguments
@@ -2444,10 +2442,9 @@ class getSpeciesData(MarxanRESTHandler):
         self.send_response(
             {"data": self.speciesData.to_dict(orient="records")})
 
+
 # gets all species information from the PostGIS database
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getAllSpeciesData?callback=__jp2
-
-
 class getAllSpeciesData(MarxanRESTHandler):
     async def get(self):
         # get all the species data
@@ -2456,10 +2453,9 @@ class getAllSpeciesData(MarxanRESTHandler):
         self.send_response({"info": "All species data received",
                             "data": self.allSpeciesData.to_dict(orient="records")})
 
+
 # gets the species preprocessing information from the feature_preprocessing.dat file
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getSpeciesPreProcessingData?user=admin&project=Start%20project&callback=__jp2
-
-
 class getSpeciesPreProcessingData(MarxanRESTHandler):
     def get(self):
         # validate the input arguments
@@ -2470,10 +2466,9 @@ class getSpeciesPreProcessingData(MarxanRESTHandler):
         self.send_response(
             {"data": self.speciesPreProcessingData.to_dict(orient="split")["data"]})
 
+
 # gets the planning units status information from the pu.dat file
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getPlanningUnitsData?user=admin&project=Start%20project&callback=__jp2
-
-
 class getPlanningUnitsData(MarxanRESTHandler):
     def get(self):
         # validate the input arguments
@@ -2483,10 +2478,9 @@ class getPlanningUnitsData(MarxanRESTHandler):
         # set the response
         self.send_response({"data": self.planningUnitsData})
 
+
 # gets the planning units cost information from the pu.dat file
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getPlanningUnitsCostData?user=admin&project=Start%20project&callback=__jp2
-
-
 class getPlanningUnitsCostData(MarxanRESTHandler):
     async def get(self):
         # validate the input arguments
@@ -2499,8 +2493,6 @@ class getPlanningUnitsCostData(MarxanRESTHandler):
 
 # gets the intersections of the planning units with the protected areas from the protected_area_intersections.dat file
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getProtectedAreaIntersectionsData?user=admin&project=Start%20project&callback=__jp2
-
-
 class getProtectedAreaIntersectionsData(MarxanRESTHandler):
     def get(self):
         # validate the input arguments
@@ -2510,10 +2502,9 @@ class getProtectedAreaIntersectionsData(MarxanRESTHandler):
         # set the response
         self.send_response({"data": self.protectedAreaIntersectionsData})
 
+
 # gets the Marxan log for the project
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getMarxanLog?user=admin&project=Start%20project&callback=__jp2
-
-
 class getMarxanLog(MarxanRESTHandler):
     def get(self):
         # validate the input arguments
@@ -2523,10 +2514,9 @@ class getMarxanLog(MarxanRESTHandler):
         # set the response
         self.send_response({"log": self.marxanLog})
 
+
 # gets the best solution for the project
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getBestSolution?user=admin&project=Start%20project&callback=__jp2
-
-
 class getBestSolution(MarxanRESTHandler):
     def get(self):
         # validate the input arguments
@@ -2537,10 +2527,9 @@ class getBestSolution(MarxanRESTHandler):
         self.send_response(
             {"data": self.bestSolution.to_dict(orient="split")["data"]})
 
+
 # gets the output summary for the project
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getOutputSummary?user=admin&project=Start%20project&callback=__jp2
-
-
 class getOutputSummary(MarxanRESTHandler):
     def get(self):
         # validate the input arguments
@@ -2551,10 +2540,9 @@ class getOutputSummary(MarxanRESTHandler):
         self.send_response(
             {"data": self.outputSummary.to_dict(orient="split")["data"]})
 
+
 # gets the summed solution for the project
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getSummedSolution?user=admin&project=Start%20project&callback=__jp2
-
-
 class getSummedSolution(MarxanRESTHandler):
     def get(self):
         # validate the input arguments
@@ -2564,10 +2552,9 @@ class getSummedSolution(MarxanRESTHandler):
         # set the response
         self.send_response({"data": self.summedSolution})
 
+
 # gets an individual solution
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getSolution?user=admin&project=Start%20project&solution=1&callback=__jp7
-
-
 class getSolution(MarxanRESTHandler):
     def get(self):
         # validate the input arguments
@@ -2585,10 +2572,9 @@ class getSolution(MarxanRESTHandler):
             self.send_response({'solution': self.solution, 'user': self.get_argument(
                 "user"), 'project': self.get_argument("project")})
 
+
 # gets the missing values for a single solution
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getMissingValues?user=admin&project=Start%20project&solution=1&callback=__jp7
-
-
 class getMissingValues(MarxanRESTHandler):
     def get(self):
         # validate the input arguments
@@ -2599,10 +2585,9 @@ class getMissingValues(MarxanRESTHandler):
         # set the response
         self.send_response({'missingValues': self.missingValues})
 
+
 # gets the combined results for the project
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getResults?user=admin&project=Start%20project&callback=__jp2
-
-
 class getResults(MarxanRESTHandler):
     def get(self):
         # validate the input arguments
@@ -2622,10 +2607,9 @@ class getResults(MarxanRESTHandler):
         except (MarxanServicesError):
             self.send_response({'info': 'No results available'})
 
+
 # gets the data from the server.dat file as an abject
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getServerData
-
-
 class getServerData(MarxanRESTHandler):
     def get(self):
         # get the data from the server.dat file
@@ -2645,10 +2629,9 @@ class getServerData(MarxanRESTHandler):
         self.send_response({'info': 'Server data loaded',
                             'serverData': self.serverData})
 
+
 # gets a list of projects for the user
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getProjects?user=andrew&callback=__jp2
-
-
 class getProjects(MarxanRESTHandler):
     async def get(self):
         # validate the input arguments
@@ -2658,10 +2641,9 @@ class getProjects(MarxanRESTHandler):
         # set the response
         self.send_response({"projects": self.projects})
 
+
 # gets all projects and their planning unit grids
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getProjectsWithGrids?&callback=__jp2
-
-
 class getProjectsWithGrids(MarxanRESTHandler):
     async def get(self):
         matches = []
@@ -2698,9 +2680,8 @@ class getProjectsWithGrids(MarxanRESTHandler):
         self.send_response({'info': "Projects data returned",
                             'data': df.to_dict(orient="records")})
 
+
 # updates the spec.dat file with the posted data
-
-
 class updateSpecFile(MarxanRESTHandler):
     async def post(self):
         # validate the input arguments
@@ -2711,9 +2692,8 @@ class updateSpecFile(MarxanRESTHandler):
         # set the response
         self.send_response({'info': "spec.dat file updated"})
 
+
 # updates the pu.dat file with the posted data
-
-
 class updatePUFile(MarxanRESTHandler):
     async def post(self):
         # validate the input arguments
@@ -2727,10 +2707,9 @@ class updatePUFile(MarxanRESTHandler):
         # set the response
         self.send_response({'info': "pu.dat file updated"})
 
+
 # returns data for a planning unit including a set of features if there are some
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getPUData?user=admin&project=Start%20project&puid=10561&callback=__jp2
-
-
 class getPUData(MarxanRESTHandler):
     async def get(self):
         # validate the input arguments
@@ -2749,10 +2728,9 @@ class getPUData(MarxanRESTHandler):
         self.send_response({"info": 'Planning unit data returned', 'data': {
                            'features': features.to_dict(orient="records"), 'pu_data': pu_data.to_dict()}})
 
+
 # used to populate the feature_preprocessing.dat file from an imported puvspr.dat file
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/createFeaturePreprocessingFileFromImport?user=andrew&project=test&callback=__jp2
-
-
 # not currently used
 class createFeaturePreprocessingFileFromImport(MarxanRESTHandler):
     async def get(self):
@@ -2764,10 +2742,9 @@ class createFeaturePreprocessingFileFromImport(MarxanRESTHandler):
         self.send_response(
             {'info': "feature_preprocessing.dat file populated"})
 
+
 # creates a new parameter in the *.dat file, either user (user.dat) or project (project.dat), by iterating through all the files and adding the key/value if it doesnt already exist
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/addParameter?type=user&key=REPORTUNITS&value=Ha&callback=__jp2
-
-
 class addParameter(MarxanRESTHandler):
     def get(self):
         # validate the input arguments - the type parameter is one of {'user','project'}
@@ -2778,10 +2755,9 @@ class addParameter(MarxanRESTHandler):
         # set the response
         self.send_response({'info': results})
 
+
 # updates parameters in the users user.dat file
 # POST ONLY
-
-
 class updateUserParameters(MarxanRESTHandler):
     def post(self):
         # validate the input arguments
@@ -2794,10 +2770,9 @@ class updateUserParameters(MarxanRESTHandler):
         self.send_response(
             {'info': ",".join(list(params.keys())) + " parameters updated"})
 
+
 # updates parameters in the projects input.dat file
 # POST ONLY
-
-
 class updateProjectParameters(MarxanRESTHandler):
     def post(self):
         # validate the input arguments
@@ -2810,10 +2785,9 @@ class updateProjectParameters(MarxanRESTHandler):
         self.send_response(
             {'info': ",".join(list(params.keys())) + " parameters updated"})
 
+
 # lists all of the projects that a feature is in
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/listProjectsForFeature?feature_class_id=63407942&callback=__jp9
-
-
 class listProjectsForFeature(MarxanRESTHandler):
     def get(self):
         # validate the input arguments
@@ -2825,10 +2799,9 @@ class listProjectsForFeature(MarxanRESTHandler):
         self.send_response(
             {'info': "Projects info returned", "projects": projects})
 
+
 # lists all of the projects that a planning grid is used in
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/listProjectsForPlanningGrid?feature_class_name=pu_89979654c5d044baa27b6008f9d06&callback=__jp9
-
-
 class listProjectsForPlanningGrid(MarxanRESTHandler):
     def get(self):
         # validate the input arguments
@@ -2840,10 +2813,9 @@ class listProjectsForPlanningGrid(MarxanRESTHandler):
         self.send_response(
             {'info': "Projects info returned", "projects": projects})
 
+
 # uploads a feature class with the passed feature class name to MapBox as a tileset using the MapBox Uploads API
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/uploadTilesetToMapBox?feature_class_name=pu_ton_marine_hexagon_20&mapbox_layer_name=hexagon&callback=__jp9
-
-
 class uploadTilesetToMapBox(MarxanRESTHandler):
     async def get(self):
         # validate the input arguments
@@ -2854,10 +2826,9 @@ class uploadTilesetToMapBox(MarxanRESTHandler):
         self.send_response({'info': "Tileset '" + self.get_argument(
             'feature_class_name') + "' uploading", 'uploadid': uploadId})
 
+
 # uploads a shapefile to the marxan root folder
 # POST ONLY
-
-
 class uploadShapefile(MarxanRESTHandler):
     def post(self):
         # validate the input arguments
@@ -2870,10 +2841,9 @@ class uploadShapefile(MarxanRESTHandler):
         self.send_response({'info': "File '" + self.get_argument('filename') +
                             "' uploaded", 'file': self.get_argument('filename')})
 
+
 # saves an uploaded file to the filename - 3 input parameters: user, project, filename (relative) and the file itself as a request file
 # POST ONLY
-
-
 class uploadFile(MarxanRESTHandler):
     def post(self):
         # validate the input arguments
@@ -2886,10 +2856,9 @@ class uploadFile(MarxanRESTHandler):
         self.send_response({'info': "File '" + self.get_argument('filename') +
                             "' uploaded", 'file': self.get_argument('filename')})
 
+
 # unzips an already uploaded shapefile and returns the rootname
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/unzipShapefile?filename=test&callback=__jp5
-
-
 class unzipShapefile(MarxanRESTHandler):
     async def get(self):
         # validate the input arguments
@@ -2900,10 +2869,9 @@ class unzipShapefile(MarxanRESTHandler):
         self.send_response({'info': "File '" + self.get_argument('filename') +
                             "' unzipped", 'rootfilename': rootfilename})
 
+
 # gets a field list from a shapefile
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getShapefileFieldnames=test&callback=__jp5
-
-
 class getShapefileFieldnames(MarxanRESTHandler):
     def get(self):
         # validate the input arguments
@@ -2915,10 +2883,9 @@ class getShapefileFieldnames(MarxanRESTHandler):
         self.send_response(
             {'info': "Field list returned", 'fieldnames': fields})
 
+
 # deletes a feature from the PostGIS database
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/deleteFeature?feature_name=test_feature1&callback=__jp5
-
-
 class deleteFeature(MarxanRESTHandler):
     async def get(self):
         # validate the input arguments
@@ -2927,10 +2894,9 @@ class deleteFeature(MarxanRESTHandler):
         # set the response
         self.send_response({'info': "Feature deleted"})
 
+
 # deletes a shapefile
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/deleteShapefile?zipfile=test.zip&shapefile=wibble.shp&callback=__jp5
-
-
 class deleteShapefile(MarxanRESTHandler):
     def get(self):
         # validate the input arguments
@@ -2940,9 +2906,8 @@ class deleteShapefile(MarxanRESTHandler):
         # set the response
         self.send_response({'info': "Shapefile deleted"})
 
+
 # creates a new feature from a passed linestring
-
-
 class createFeatureFromLinestring(MarxanRESTHandler):
     async def post(self):
         # validate the input arguments
@@ -2961,10 +2926,9 @@ class createFeatureFromLinestring(MarxanRESTHandler):
         self.send_response({'info': "Feature '" + self.get_argument('name') + "' created",
                             'id': id, 'feature_class_name': feature_class_name, 'uploadId': uploadId})
 
+
 # kills a running process
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/stopProcess?pid=m12345&callback=__jp5
-
-
 class stopProcess(MarxanRESTHandler):
     async def get(self):
         # validate the input arguments
@@ -2986,20 +2950,18 @@ class stopProcess(MarxanRESTHandler):
         else:
             self.send_response({'info': "pid '" + pid + "' terminated"})
 
+
 # gets the run log
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/getRunLogs?
-
-
 class getRunLogs(MarxanRESTHandler):
     def get(self):
         runlog = _getRunLogs()
         self.send_response({'info': "Run log returned",
                             'data': runlog.to_dict(orient="records")})
 
+
 # clears the run log
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/clearRunLogs?
-
-
 class clearRunLogs(MarxanRESTHandler):
     def get(self):
         runlog = _getRunLogs()
@@ -3007,9 +2969,8 @@ class clearRunLogs(MarxanRESTHandler):
                    1].to_csv(MARXAN_FOLDER + RUN_LOG_FILENAME, index=False, sep='\t')
         self.send_response({'info': "Run log cleared"})
 
+
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/dismissNotification?user=admin&notificationid=1
-
-
 class dismissNotification(MarxanRESTHandler):
     def get(self):
         # validate the input arguments
@@ -3018,18 +2979,16 @@ class dismissNotification(MarxanRESTHandler):
         _dismissNotification(self, self.get_argument('notificationid'))
         self.send_response({'info': "Notification dismissed"})
 
+
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/resetNotifications?user=admin
-
-
 class resetNotifications(MarxanRESTHandler):
     def get(self):
         # reset the notification - this used to be a function but it seemed unneccessary so now its o just this line of code. 
         _writeFileUnicode(self.folder_user + NOTIFICATIONS_FILENAME, "")
         self.send_response({'info': "Notifications reset"})
 
+
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/deleteGapAnalysis?user=admin&project=Start%20project
-
-
 class deleteGapAnalysis(MarxanRESTHandler):
     async def get(self):
         _validateArguments(self.request.arguments, ['user', 'project'])
@@ -3039,18 +2998,16 @@ class deleteGapAnalysis(MarxanRESTHandler):
         await pg.execute(sql.SQL("DROP TABLE IF EXISTS marxan.{};").format(sql.Identifier(table_name.lower())))
         self.send_response({'info': "Gap analysis deleted"})
 
+
 # for testing role access to servivces
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/testRoleAuthorisation&callback=__jp5
-
-
 class testRoleAuthorisation(MarxanRESTHandler):
     def get(self):
         self.send_response({'info': "Service successful"})
 
+
 # shuts down the marxan-server and computer after a period of time - currently only on Unix
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/shutdown&delay=10&callback=_wibble
-
-
 class shutdown(MarxanRESTHandler):
     async def get(self):
         if platform.system() != "Windows":
@@ -3070,21 +3027,20 @@ class shutdown(MarxanRESTHandler):
             # shutdown the os
             os.system('sudo shutdown now')
 
+
 # blocks tornado for the passed number of seconds - for testing
-
-
 class block(MarxanRESTHandler):
     def get(self):
         _validateArguments(self.request.arguments, ['seconds'])
         time.sleep(int(self.get_argument("seconds")))
         self.send_response({'info': "Blocking finished"})
 
+
 # tests tornado is working properly
-
-
 class testTornado(MarxanRESTHandler):
     def get(self):
         self.send_response({'info': "Tornado running"})
+
 
 ####################################################################################################################################################################################################################################################################
 # baseclass for handling WebSockets
