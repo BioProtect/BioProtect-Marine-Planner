@@ -69,7 +69,7 @@ ROLE_UNAUTHORISED_METHODS = {
 }
 MARXAN_SERVER_VERSION = "v0.9.37"
 MARXAN_LOG_FILE = 'marxan-server.log'
-MARXAN_REGISTRY = "https://marxanweb.github.io/general/registry/marxan.js"
+MARXAN_REGISTRY = "https://marxanweb.github.io/general/registry/marxan.json"
 MARXAN_REGISTRY_JSON = "marxan.json"
 GUEST_USERNAME = "guest"
 NOT_AUTHENTICATED_ERROR = "Request could not be authenticated. No secure cookie found."
@@ -113,6 +113,8 @@ DICT_PAD = 25  # text is right padded this much in dictionary outputs
 ####################################################################################################################################################################################################################################################################
 
 # run when the server starts to set all of the global path variables
+
+
 def _setGlobalVariables():
     global MBAT
     global MARXAN_FOLDER
@@ -153,7 +155,7 @@ def _setGlobalVariables():
     MARXAN_FOLDER = os.path.dirname(os.path.realpath(__file__)) + os.sep
     # get the data in the server configuration file
     serverData = buildDataDict(MARXAN_FOLDER + 'config.json')
-        # get the database connection string
+    # get the database connection string
     SERVER_NAME = _getDictValue(serverData, 'SERVER_NAME')
     SERVER_DESCRIPTION = _getDictValue(serverData, 'SERVER_DESCRIPTION')
     DATABASE_NAME = _getDictValue(serverData, 'DATABASE_NAME')
@@ -294,7 +296,8 @@ def log(_str, _color=Fore.RESET):
             # print to file
             if type(_str) is tuple:
                 _str = "".join(_str)
-            _writeFileUnicode("".join([MARXAN_FOLDER, MARXAN_LOG_FILE]), _str, "a")
+            _writeFileUnicode(
+                "".join([MARXAN_FOLDER, MARXAN_LOG_FILE]), _str, "a")
             # MARXAN_FOLDER + MARXAN_LOG_FILE, _str + "\n", "a")
 
 
@@ -307,7 +310,7 @@ def _getRESTMethod(path):
 
 
 # creates a new user
-# dont know about this. Saving users in files, no password hashing. 
+# dont know about this. Saving users in files, no password hashing.
 # **************************************************************** SORT THIS ****************************************************************
 def _createUser(obj, user, fullname, email, password):
     # get the list of users
@@ -480,6 +483,8 @@ def _setFolderPaths(obj, arguments):
             obj.project = obj.get_argument("project")
 
 # get the project data from the input.dat file as a categorised list of settings - using the obj.folder_project path and creating an attribute called projectData in the obj for the return data
+
+
 async def _getProjectData(obj):
     paramsArray = []
     filesDict = {}
@@ -603,7 +608,10 @@ def _getServerData(obj):
 
 # get the data on the user from the user.dat file
 def _getUserData(obj):
+    print('obj: ', obj)
     data = _getKeyValuesFromFile(obj.folder_user + USER_DATA_FILENAME)
+    print('USER_DATA_FILENAME: ', USER_DATA_FILENAME)
+    print('data: ', data)
     # set the userData attribute on this object
     obj.userData = data
 
@@ -687,8 +695,8 @@ async def _getPlanningUnitsCostData(obj):
 async def _getPlanningUnitGrids():
     return await pg.query("""
         SELECT feature_class_name ,alias ,description ,to_char(creation_date, 'DD/MM/YY HH24:MI:SS')::text AS creation_date ,
-        country_id ,aoi_id,domain,_area,ST_AsText(envelope) envelope, pu.source, original_n country, created_by,tilesetid, 
-        planning_unit_count FROM marxan.metadata_planning_units pu LEFT OUTER JOIN marxan.gaul_2015_simplified_1km ON id_country = country_id 
+        country_id ,aoi_id,domain,_area,ST_AsText(envelope) envelope, pu.source, original_n country, created_by,tilesetid,
+        planning_unit_count FROM marxan.metadata_planning_units pu LEFT OUTER JOIN marxan.gaul_2015_simplified_1km ON id_country = country_id
         order by lower(alias);""", None, "Dict")
 
 
@@ -895,7 +903,8 @@ def _loadCSV(filename, errorIfNotExists=False):
         df = pandas.read_csv(filename, sep=None, engine='python')
     else:
         if errorIfNotExists:
-            raise MarxanServicesError("The file '" + filename + "' does not exist")
+            raise MarxanServicesError(
+                "The file '" + filename + "' does not exist")
         else:
             df = pandas.DataFrame()
     return df
@@ -1543,10 +1552,12 @@ def _setCORS(obj):
     print('obj: ', obj)
     print('obj.request: ', obj.request)
     # get the referer
-    print('list(obj.request.headers.keys(): ', list(obj.request.headers.keys()))
+    print('list(obj.request.headers.keys(): ',
+          list(obj.request.headers.keys()))
     print('PERMITTED_DOMAINS: ', PERMITTED_DOMAINS)
     print('PERMITTED_METHODS: ', PERMITTED_METHODS)
-    print('_getRESTMethod(obj.request.path): ', _getRESTMethod(obj.request.path))
+    print('_getRESTMethod(obj.request.path): ',
+          _getRESTMethod(obj.request.path))
     if "Referer" in list(obj.request.headers.keys()):
         # get the referer url, e.g. https://marxan-client-blishten.c9users.io/ or https://beta.biopama.org/marxan-client/build/
         referer = obj.request.headers.get("Referer")
@@ -1555,7 +1566,7 @@ def _setCORS(obj):
         origin = parsed.scheme + "://" + parsed.netloc
         # get the method
         method = _getRESTMethod(obj.request.path)
-        
+
         # check the origin is permitted either by being in the list of permitted domains or if the referer and host are on the same machine, i.e. not cross domain - OR if a permitted method is being called
         if (origin in PERMITTED_DOMAINS) or (referer.find(obj.request.host_name) != -1) or (method in PERMITTED_METHODS):
             obj.set_header("Access-Control-Allow-Origin", origin)
@@ -1740,8 +1751,9 @@ def _checkZippedShapefile(shapefile):
 
 
 def _getMBAT():
-    with open(MARXAN_REGISTRY_JSON) as json_file:
-        data = json.load(json_file)
+    def _getMBAT():
+        r = requests.get(MARXAN_REGISTRY)
+        data = r.json()
         mbat = data.get('MBAT')
         if mbat is None:
             raise MarxanServicesError("MBAT not found in Marxan Registry")
@@ -1775,7 +1787,6 @@ def _deleteShutdownFile():
     if (os.path.exists(MARXAN_FOLDER + SHUTDOWN_FILENAME)):
         print("Deleting the shutdown file")
         os.remove(MARXAN_FOLDER + SHUTDOWN_FILENAME)
-
 
 
 ####################################################################################################################################################################################################################################################################
@@ -1888,9 +1899,10 @@ class PostGIS():
                 result = await process.wait()
             else:
                 # run the import using the python subprocess module
-                resultBytes = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
+                resultBytes = subprocess.check_output(
+                    cmd, shell=True, stderr=subprocess.STDOUT)
                 result = 0 if (resultBytes.decode("utf-8") == '') else -1
-            
+
             if result == 0:
                 # split the feature class at the dateline
                 if (splitAtDateline):
@@ -1946,25 +1958,26 @@ class MarxanRESTHandler(tornado.web.RequestHandler):
     def set_default_headers(self):
         print('set_default_headers: ')
         print('DISABLE_SECURITY: ', DISABLE_SECURITY)
-        if DISABLE_SECURITY:    
+        if DISABLE_SECURITY:
             # The value of the 'Access-Control-Allow-Origin' header in the response must not be the wildcard '*' when the request's credentials mode is 'include'
             # self.set_header("Access-Control-Allow-Origin", "*")
             self.set_header("Access-Control-Allow-Origin", "http://localhost")
             # self.set_header("Content-Type", "application/json")
             # self.set_header("Access-Control-Allow-Headers", "content-type")
-            self.set_header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS, PATCH, PUT')
+            self.set_header('Access-Control-Allow-Methods',
+                            'POST, GET, OPTIONS, PATCH, PUT')
             self.set_header('Access-Control-Allow-Credentials', 'true')
 
-        # else: 
-
+        # else:
 
     # get the current user
+
     def get_current_user(self):
         if self.get_secure_cookie("user"):
             return self.get_secure_cookie("user").decode("utf-8")
 
-
     # called before the request is processed - does the neccessary authentication/authorisation
+
     def prepare(self):
         # get the requested method
         method = _getRESTMethod(self.request.path)
@@ -2279,6 +2292,7 @@ class validateUser(MarxanRESTHandler):
     def get(self):
         # validate the input arguments
         _validateArguments(self.request.arguments, ['user', 'password'])
+        print('_validateArguments: ', _validateArguments)
         # see if the guest user is enabled
         if ((not _guestUserEnabled(self)) and (self.get_argument("user") == GUEST_USERNAME)):
             raise MarxanServicesError(
@@ -2287,6 +2301,7 @@ class validateUser(MarxanRESTHandler):
             # get the user data from the user.dat file
             _getUserData(self)
         except (MarxanServicesError) as e:
+            print('e: ', e)
             raise MarxanServicesError("Invalid login")
         # compare the passed password to the one in the user.dat file
         if self.get_argument("password") == self.userData["PASSWORD"]:
@@ -2983,7 +2998,7 @@ class dismissNotification(MarxanRESTHandler):
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/resetNotifications?user=admin
 class resetNotifications(MarxanRESTHandler):
     def get(self):
-        # reset the notification - this used to be a function but it seemed unneccessary so now its o just this line of code. 
+        # reset the notification - this used to be a function but it seemed unneccessary so now its o just this line of code.
         _writeFileUnicode(self.folder_user + NOTIFICATIONS_FILENAME, "")
         self.send_response({'info': "Notifications reset"})
 
@@ -3045,8 +3060,6 @@ class testTornado(MarxanRESTHandler):
 ####################################################################################################################################################################################################################################################################
 # baseclass for handling WebSockets
 ####################################################################################################################################################################################################################################################################
-
-
 class MarxanWebSocketHandler(tornado.websocket.WebSocketHandler):
     # get the current user
     def get_current_user(self):
@@ -3129,14 +3142,13 @@ class MarxanWebSocketHandler(tornado.websocket.WebSocketHandler):
         # close the websocket cleanly
         super().close(1000)
 
+
 ####################################################################################################################################################################################################################################################################
 # MarxanWebSocketHandler subclasses
 ####################################################################################################################################################################################################################################################################
 
 # wss://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/runMarxan?user=admin&project=Start%20project
 # starts a Marxan run on the server and streams back the output as websockets
-
-
 class runMarxan(MarxanWebSocketHandler):
     # authenticate and get the user folder and project folders
     async def open(self):
@@ -3283,9 +3295,8 @@ class runMarxan(MarxanWebSocketHandler):
             log("The WebSocket is already closed. Unable to send a close message for pid = " +
                 str(self.marxanProcess.pid))
 
+
 # updates the WDPA table in PostGIS using the publically available downloadUrl
-
-
 class updateWDPA(MarxanWebSocketHandler):
     # authenticate and get the user folder and project folders
     async def open(self):
@@ -3445,8 +3456,10 @@ class importFeatures(MarxanWebSocketHandler):
                     feature_names = [name]
                 else:  # get the feature names from a field in the shapefile
                     splitfield = self.get_argument('splitfield')
+                    print('splitfield: ', splitfield)
                     features = await pg.query(sql.SQL("SELECT {splitfield} FROM marxan.{scratchTable}").format(splitfield=sql.Identifier(splitfield), scratchTable=sql.Identifier(scratch_name)), None, "DataFrame")
                     feature_names = list(set(features[splitfield].tolist()))
+                    print('feature_names: ', feature_names)
                     # if they are not unique then return an error
                     # if (len(feature_names) != len(set(feature_names))):
                     #     raise MarxanServicesError("Feature names are not unique for the field '" + splitfield + "'")
@@ -3455,15 +3468,31 @@ class importFeatures(MarxanWebSocketHandler):
                     # create the new feature class
                     if name:  # single feature name
                         feature_class_name = _getUniqueFeatureclassName("f_")
-                        await pg.execute(sql.SQL("CREATE TABLE marxan.{feature_class_name} AS SELECT * FROM marxan.{scratchTable};").format(feature_class_name=sql.Identifier(feature_class_name), scratchTable=sql.Identifier(scratch_name)), [feature_name])
+                        await pg.execute(
+                            sql.SQL("CREATE TABLE marxan.{feature_class_name} AS SELECT * FROM marxan.{scratchTable};").format(
+                                feature_class_name=sql.Identifier(
+                                    feature_class_name),
+                                scratchTable=sql.Identifier(scratch_name)
+                            ), [feature_name])
                         description = self.get_argument('description')
                     else:  # multiple feature names
                         feature_class_name = _getUniqueFeatureclassName("fs_")
-                        await pg.execute(sql.SQL("CREATE TABLE marxan.{feature_class_name} AS SELECT * FROM marxan.{scratchTable} WHERE {splitField} = %s;").format(feature_class_name=sql.Identifier(feature_class_name), scratchTable=sql.Identifier(scratch_name), splitField=sql.Identifier(splitfield)), [feature_name])
+                        await pg.execute(
+                            sql.SQL("CREATE TABLE marxan.{feature_class_name} AS SELECT * FROM marxan.{scratchTable} WHERE {splitField} = %s;").format(
+                                feature_class_name=sql.Identifier(
+                                    feature_class_name),
+                                scratchTable=sql.Identifier(scratch_name),
+                                splitField=sql.Identifier(splitfield)
+                            ), [feature_name])
                         description = "Imported from '" + shapefile + \
                             "' and split by '" + splitfield + "' field"
                     # finish the import by adding a record in the metadata table
-                    id = await _finishImportingFeature(feature_class_name, feature_name, description, "Imported shapefile", self.get_current_user())
+                    id = await _finishImportingFeature(
+                        feature_class_name,
+                        feature_name,
+                        description,
+                        "Imported shapefile",
+                        self.get_current_user())
                     # upload the feature class to Mapbox
                     uploadId = await _uploadTilesetToMapbox(feature_class_name, feature_class_name)
                     # append the uploadId to the uploadIds array
@@ -3561,8 +3590,13 @@ class importGBIFData(MarxanWebSocketHandler):
             # get the response as a json object
             _json = json.loads(response)
             # get the lat longs
-            data = [OrderedDict({'eventDate': item['eventDate'] if 'eventDate' in item.keys() else None, 'gbifID': item['gbifID'],
-                                 'lng':item['decimalLongitude'], 'lat': item['decimalLatitude'], 'geometry': ''}) for item in _json['results']]
+            data = [OrderedDict({
+                'eventDate': item['eventDate'] if 'eventDate' in item.keys() else None,
+                'gbifID': item['gbifID'],
+                'lng':item['decimalLongitude'],
+                'lat': item['decimalLatitude'],
+                'geometry': ''
+            }) for item in _json['results']]
             # append them to the list
             latLongs.extend(data)
             fetched.add(current_url)
@@ -3640,11 +3674,10 @@ class importGBIFData(MarxanWebSocketHandler):
         else:
             return 'No common name'
 
+
 ####################################################################################################################################################################################################################################################################
 # baseclass for handling long-running PostGIS queries using WebSockets
 ####################################################################################################################################################################################################################################################################
-
-
 class QueryWebSocketHandler(MarxanWebSocketHandler):
     # authenticate and get the user folder and project folders
     async def open(self, startMessage):
@@ -3692,14 +3725,12 @@ class QueryWebSocketHandler(MarxanWebSocketHandler):
             else:
                 self.close({'error': e.pgerror})
 
+
 ####################################################################################################################################################################################################################################################################
 # WebSocket subclasses
 ####################################################################################################################################################################################################################################################################
-
 # preprocesses the features by intersecting them with the planning units
 # wss://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/preprocessFeature?user=andrew&project=Tonga%20marine%2030km2&planning_grid_name=pu_ton_marine_hexagon_30&feature_class_name=volcano&alias=volcano&id=63408475
-
-
 class preprocessFeature(QueryWebSocketHandler):
     async def open(self):
         try:
@@ -3708,16 +3739,29 @@ class preprocessFeature(QueryWebSocketHandler):
             error = _getExceptionLastLine(sys.exc_info())
             self.close({'error': error})
         else:
-            _validateArguments(self.request.arguments, [
-                               'user', 'project', 'id', 'feature_class_name', 'alias', 'planning_grid_name'])
+            _validateArguments(
+                self.request.arguments,
+                ['user', 'project', 'id', 'feature_class_name', 'alias', 'planning_grid_name'])
+
             # run the query asynchronously and wait for the results
-            results = await self.executeQuery(sql.SQL("SELECT metadata.oid::integer species, puid pu, ST_Area(ST_Transform(ST_Union(ST_Intersection(grid.geometry,feature.geometry)),3410)) amount from marxan.{grid} grid, marxan.{feature} feature, marxan.metadata_interest_features metadata where st_intersects(grid.geometry,feature.geometry) and metadata.feature_class_name = %s group by 1,2;").format(grid=sql.Identifier(self.get_argument('planning_grid_name')), feature=sql.Identifier(self.get_argument('feature_class_name'))), [self.get_argument('feature_class_name')])
+            results = await self.executeQuery(
+                sql.SQL(
+                    "SELECT metadata.oid::integer species, puid pu, ST_Area(ST_Transform(ST_Union(ST_Intersection(grid.geometry,feature.geometry)),3410)) amount from marxan.{grid} grid, marxan.{feature} feature, marxan.metadata_interest_features metadata where st_intersects(grid.geometry,feature.geometry) and metadata.feature_class_name = %s group by 1,2;").format(
+                        grid=sql.Identifier(
+                            self.get_argument('planning_grid_name')),
+                        feature=sql.Identifier(self.get_argument('feature_class_name'))),
+                [self.get_argument('feature_class_name')])
             # get an empty dataframe
-            d = {'amount': pandas.Series([], dtype='float64'), 'species': pandas.Series(
-                [], dtype='int64'), 'pu': pandas.Series([], dtype='int64')}
+            d = {
+                'amount': pandas.Series([], dtype='float64'),
+                'species': pandas.Series([], dtype='int64'),
+                'pu': pandas.Series([], dtype='int64')
+            }
             emptyDataFrame = pandas.DataFrame(
                 data=d)[['species', 'pu', 'amount']]  # reorder the columns
-            # get the intersection data as a dataframe from the queryresults - TODO - this needs to be rewritten to be scalable - getting the records in this way fails when you have > 1000 records and you need to use a method that creates a tmp table - see preprocessPlanningUnits
+
+            # get the intersection data as a dataframe from the queryresults -
+            # TODO - this needs to be rewritten to be scalable - getting the records in this way fails when you have > 1000 records and you need to use a method that creates a tmp table - see preprocessPlanningUnits
             intersectionData = pandas.DataFrame.from_records(
                 results["records"], columns=results["columns"])
             # get the existing data
@@ -3766,7 +3810,11 @@ class preprocessProtectedAreas(QueryWebSocketHandler):
             _validateArguments(self.request.arguments, [
                                'user', 'project', 'planning_grid_name'])
             # do the intersection with the protected areas
-            results = await self.executeQuery(sql.SQL("SELECT DISTINCT iucn_cat, grid.puid FROM marxan.wdpa, marxan.{} grid WHERE ST_Intersects(wdpa.geometry, grid.geometry) AND wdpaid IN (SELECT wdpaid FROM (SELECT envelope FROM marxan.metadata_planning_units WHERE feature_class_name =  %s) AS sub, marxan.wdpa WHERE ST_Intersects(wdpa.geometry, envelope)) ORDER BY 1,2").format(sql.Identifier(self.get_argument('planning_grid_name'))), [self.get_argument('planning_grid_name')])
+            results = await self.executeQuery(
+                sql.SQL(
+                    "SELECT DISTINCT iucn_cat, grid.puid FROM marxan.wdpa, marxan.{} grid WHERE ST_Intersects(wdpa.geometry, grid.geometry) AND wdpaid IN (SELECT wdpaid FROM (SELECT envelope FROM marxan.metadata_planning_units WHERE feature_class_name =  %s) AS sub, marxan.wdpa WHERE ST_Intersects(wdpa.geometry, envelope)) ORDER BY 1,2").format(
+                        sql.Identifier(self.get_argument('planning_grid_name'))
+                ), [self.get_argument('planning_grid_name')])
             # get the intersection data as a dataframe from the queryresults
             intersectionData = pandas.DataFrame.from_records(
                 results["records"], columns=results["columns"])
@@ -3877,11 +3925,10 @@ class runGapAnalysis(QueryWebSocketHandler):
             self.close({'info': "Gap analysis complete",
                         'data': df.to_dict(orient="records")})
 
+
 ####################################################################################################################################################################################################################################################################
 # tornado functions
 ####################################################################################################################################################################################################################################################################
-
-
 class Application(tornado.web.Application):
     def __init__(self, _pool):
         # this attribute is used by QueryWebSocketHandler descendent classes to get a pointer to the connection pool and a PID of the query
@@ -3994,14 +4041,16 @@ async def main():
         app = Application(pool)
         # start listening on whichever port, and if there is an https certificate then use the certificate information from the server.dat file to return data securely
         if CERTFILE != "None":
-            app.listen(PORT, ssl_options={ "certfile": CERTFILE, "keyfile": KEYFILE})
+            app.listen(PORT, ssl_options={
+                       "certfile": CERTFILE, "keyfile": KEYFILE})
             navigateTo = "https://"
         else:
             app.listen(PORT)
             navigateTo = "http://"
 
         navigateTo = navigateTo + "<host>:" + PORT + \
-            "/index.html" if (PORT != '80') else navigateTo + "<host>/index.html"
+            "/index.html" if (PORT != '80') else navigateTo + \
+            "<host>/index.html"
         # open the web browser if the call includes a url, e.g. python marxan-server.py http://localhost/index.html
         if len(sys.argv) > 1:
             if MARXAN_CLIENT_VERSION == "Not installed":
@@ -4021,6 +4070,7 @@ async def main():
         await SHUTDOWN_EVENT.wait()
         # close the database connection
         pg.pool.close()
+
 
 if __name__ == "__main__":
     try:
