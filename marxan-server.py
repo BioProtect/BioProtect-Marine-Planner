@@ -72,7 +72,7 @@ ROLE_UNAUTHORISED_METHODS = {
     "User": ["testRoleAuthorisation", "deleteFeature", "getUsers", "deleteUser", "deletePlanningUnitGrid", "clearRunLogs", "updateWDPA", "toggleEnableGuestUser", "shutdown", "addParameter", "block", "resetDatabase", "cleanup", 'runSQLFile'],
     "Admin": []
 }
-MARXAN_SERVER_VERSION = "v0.9.6"
+MARXAN_SERVER_VERSION = "v0.9.7"
 MARXAN_LOG_FILE = 'marxan-server.log'
 MARXAN_REGISTRY = "https://marxanweb.github.io/general/registry/marxan.json"
 MARXAN_REGISTRY_JSON = "marxan.json"
@@ -799,7 +799,7 @@ def _getProtectedAreaIntersectionsData(obj):
 
 # resets all of the protected area intersections information - for example when a new version of the wdpa is installed
 def _invalidateProtectedAreaIntersections():
-    # get all of the existing protected area intersection files
+    # get all of the existing protected area intersection files - this includes projects in the /_marxan_web_resources/case_studies folder
     files = _getFilesInFolderRecursive(
         MARXAN_USERS_FOLDER, PROTECTED_AREA_INTERSECTIONS_FILENAME)
     # iterate through all of these files and replace them with an empty file
@@ -808,7 +808,39 @@ def _invalidateProtectedAreaIntersections():
                         os.sep + PROTECTED_AREA_INTERSECTIONS_FILENAME, file)
 
 
+# intersects the planning grid with the WDPA and writes the results of that intersection to the output folder - obj is an instance of a QueryWebSocketHandler descendent class
+async def _preprocessProtectedAreas(obj, planning_grid_name, output_folder):
+    # do the intersection
+    intersectionData = await obj.executeQuery(sql.SQL("SELECT DISTINCT iucn_cat, grid.puid FROM marxan.wdpa, marxan.{} grid WHERE ST_Intersects(wdpa.geometry, grid.geometry) AND wdpaid IN (SELECT wdpaid FROM (SELECT envelope FROM marxan.metadata_planning_units WHERE feature_class_name =  %s) AS sub, marxan.wdpa WHERE ST_Intersects(wdpa.geometry, envelope)) ORDER BY 1,2").format(sql.Identifier(planning_grid_name)), data=[planning_grid_name], returnFormat="DataFrame")
+    # write the intersections to file
+    intersectionData.to_csv(
+        output_folder + PROTECTED_AREA_INTERSECTIONS_FILENAME, index=False)
+
+# redoes the protected area preprocessing for the projects in the passed folder - for example, when the WDPA is updated we want to redo the protected area preprocessing for all of the case study projects so that new registered users have the most up-to-date intersection data
+# obj is an instance of a MarxanWebSocketHandler descendent class
+
+
+async def _reprocessProtectedAreas(obj, folder):
+    # get the project folders
+    project_folders = glob.glob(folder + "*/")
+    # iterate through the folders
+    for folder in project_folders:
+        # get the project metadata
+        tmpObj = ExtendableObject()
+        tmpObj.project = "unimportant"
+        tmpObj.folder_project = os.path.dirname(folder) + os.sep
+        await _getProjectData(tmpObj)
+        # get the planning grid name
+        planning_grid_name = tmpObj.projectData['metadata']['PLANNING_UNIT_NAME']
+        # preprocess the planning grid with the WDPA
+        obj.send_response({'status': "Preprocessing",
+                           'info': 'Preprocessing ' + planning_grid_name})
+        await _preprocessProtectedAreas(obj, planning_grid_name, tmpObj.folder_project + 'input' + os.sep)
+    return project_folders
+
 # gets the marxan log after a run
+
+
 def _getMarxanLog(obj):
     if (os.path.exists(obj.folder_output + OUTPUT_LOG_FILENAME)):
         log = _readFileUnicode(obj.folder_output + OUTPUT_LOG_FILENAME)
@@ -1349,10 +1381,35 @@ def _zipfolder(foldername, zipFile):
             # add the file to the zip
             zipobj.write(filename, arcname)
 
-# unzips a zip file and returns the rootname - if rejectMultipleShapefiles is True then an exception will be thrown if the zip file contains multiple shapefiles -  if searchTerm is specified then only the files that match the searchTerm will be extracted
+
+# unzips a file
+def _unzipFile(folder, filename):
+    # check the zip file exists
+    if not os.path.exists(folder + filename):
+        raise MarxanServicesError(
+            "The zip file '" + filename + "' does not exist")
+    # create an instance of the zip file
+    zip_ref = zipfile.ZipFile(folder + filename, 'r')
+    # extract all the files
+    zip_ref.extractall(folder)
+    # return the members
+    return zip_ref.namelist()
+
+# unzips a shapefile file and returns the rootname - if rejectMultipleShapefiles is True then an exception will be thrown if the zip file contains multiple shapefiles -  if searchTerm is specified then only the files that match the searchTerm will be extracted
 
 
-def _unzipFile(folder, filename, rejectMultipleShapefiles=True, searchTerm=None):
+def _unzipShapefile(folder, filename, rejectMultipleShapefiles=True, searchTerm=None):
+    """Unzips a zipped shapefile
+
+    Parameters:
+        folder: the folder where the zip file is located
+        filename: the name of the zip file 
+        rejectMultipleShapefiles: if True throws an exception if there are multiple shapefiles in the zip filename (default is True)
+        searchTerm: filters the members of the zipfile for those that match the searchTerm, e.g. if searchTerm = 'polygons' it will extract all members whos filename contains the text 'polygon' (default is None)
+
+    Returns:
+        rootname: the filename of the first matching file that is unzipped minus the extension
+    """
     # unzip the shapefile
     if not os.path.exists(folder + filename):
         raise MarxanServicesError(
@@ -1525,7 +1582,7 @@ async def _finishImportingFeature(feature_class_name, name, description, source,
 # imports the planning unit grid from a zipped shapefile (given by filename) and starts the upload to Mapbox
 async def _importPlanningUnitGrid(filename, name, description, user):
     # unzip the shapefile and get the name of the shapefile without an extension, e.g. PlanningUnitsData.zip -> planningunits.shp -> planningunits
-    rootfilename = await IOLoop.current().run_in_executor(None, _unzipFile, IMPORT_FOLDER, filename)
+    rootfilename = await IOLoop.current().run_in_executor(None, _unzipShapefile, IMPORT_FOLDER, filename)
     # get a unique feature class name for the import
     feature_class_name = _getUniqueFeatureclassName("pu_")
     try:
@@ -1699,6 +1756,8 @@ def _checkCORS(obj):
     print("In check CORS...........")
     print('GUEST_USERNAME: ', GUEST_USERNAME)
     print('obj.current_user: ', obj.current_user)
+    print('obj: ', obj)
+    print('obj.request: ', obj.request)
     print('obj.request.host[:9]: ', obj.request.host[:9])
     print('DISABLE_SECURITY: ', DISABLE_SECURITY)
     if (DISABLE_SECURITY or obj.request.host[:9] == "localhost" or (obj.current_user == GUEST_USERNAME)):
@@ -1960,17 +2019,20 @@ def _getExceptionLastLine(exc_info):
 
 def _deleteShutdownFile():
     if (os.path.exists(MARXAN_FOLDER + SHUTDOWN_FILENAME)):
-        print("Deleting the shutdown file")
+        logging.warning("Deleting the shutdown file")
         os.remove(MARXAN_FOLDER + SHUTDOWN_FILENAME)
 
 # runs a command in a separate process
 @gen.coroutine
-def _runCmd(cmd):
+def _runCmd(cmd, suppressOutput=False):
     if platform.system() != "Windows":
         try:
             # run the import as an asyncronous subprocess
-            process = Subprocess([*shlex.split(cmd)])
-            # sometimes this creates zombie processes and hangs
+            if suppressOutput:
+                process = Subprocess([*shlex.split(cmd)],
+                                     stdout=subprocess.DEVNULL)
+            else:
+                process = Subprocess([*shlex.split(cmd)])
             result = yield process.wait_for_exit()
         except CalledProcessError as e:
             raise MarxanServicesError(
@@ -2078,13 +2140,27 @@ class PostGIS():
             await self.pool.release(conn)
 
     # uses ogr2ogr to import a file into PostGIS (shapefile or gml file)
-    async def importFile(self, folder, filename, feature_class_name, sEpsgCode, tEpsgCode, splitAtDateline=True):
+    async def importFile(self, folder, filename, feature_class_name, sEpsgCode, tEpsgCode, splitAtDateline=True, sourceFeatureClass=''):
+        """Imports a file into PostGIS using ogr2ogr
+
+        Parameters:
+            folder: the folder where the file is located
+            filename: the name of the file to import
+            feature_class_name: the name of the destination feature class which will be created
+            sEpsgCode: source EPSG code
+            tEpsgCode: target EPSG code
+            splitAtDateline: set to True to split any features at the dateline (default is True)
+            sourceFeatureClass: the name of the source feature class within the File geodatabase to import (default is an empty string)
+
+        Returns:
+            returncode: the subprocess returncode, either 0 (succesful) or 1 (error)
+        """
         try:
             # drop the feature class if it already exists
             await self.execute(sql.SQL("DROP TABLE IF EXISTS marxan.{};").format(sql.Identifier(feature_class_name)))
             # using ogr2ogr - rename the geometry field from the default (wkb_geometry) to geometry
-            cmd = '"' + OGR2OGR_EXECUTABLE + '" -f "PostgreSQL" PG:"host=' + DATABASE_HOST + ' user=' + DATABASE_USER + ' dbname=' + DATABASE_NAME + ' password=' + DATABASE_PASSWORD + '" "' + \
-                folder + filename + '" -nlt GEOMETRY -lco SCHEMA=marxan -lco GEOMETRY_NAME=geometry -nln ' + \
+            cmd = '"' + OGR2OGR_EXECUTABLE + '" -f "PostgreSQL" PG:"host=' + DATABASE_HOST + ' user=' + DATABASE_USER + ' dbname=' + DATABASE_NAME + ' password=' + DATABASE_PASSWORD + '" "' + folder + filename + \
+                '" -nlt GEOMETRY -lco SCHEMA=marxan -lco GEOMETRY_NAME=geometry ' + sourceFeatureClass + ' -nln ' + \
                 feature_class_name + ' -s_srs ' + sEpsgCode + \
                 ' -t_srs ' + tEpsgCode + ' -lco precision=NO'
             logging.debug(cmd)
@@ -2113,6 +2189,11 @@ class PostGIS():
     async def importGml(self, folder, gmlfilename, feature_class_name, sEpsgCode="EPSG:4326", tEpsgCode="EPSG:4326", splitAtDateline=True):
         # import the file
         await self.importFile(folder, gmlfilename, feature_class_name, sEpsgCode, tEpsgCode, splitAtDateline)
+
+    # imports a feature class from a file geodatabase into PostGIS
+    async def importFileGDBFeatureClass(self, folder, fileGDB, sourceFeatureClass, destFeatureClass, sEpsgCode="EPSG:4326", tEpsgCode="EPSG:4326", splitAtDateline=True):
+        # import the file
+        await self.importFile(folder, fileGDB, destFeatureClass, sEpsgCode, tEpsgCode, splitAtDateline, sourceFeatureClass)
 
     # exports a feature class from postgis to a shapefile in the exportFolder
     async def exportToShapefile(self, exportFolder, feature_class_sname, tEpsgCode="EPSG:4326"):
@@ -3367,7 +3448,7 @@ class unzipShapefile(MarxanRESTHandler):
             # validate the input arguments
             _validateArguments(self.request.arguments, ['filename'])
             # write the file to the server
-            rootfilename = await IOLoop.current().run_in_executor(None, _unzipFile, IMPORT_FOLDER, self.get_argument('filename'))
+            rootfilename = await IOLoop.current().run_in_executor(None, _unzipShapefile, IMPORT_FOLDER, self.get_argument('filename'))
             # set the response
             self.send_response({'info': "File '" + self.get_argument(
                 'filename') + "' unzipped", 'rootfilename': rootfilename})
@@ -3561,12 +3642,12 @@ class runSQLFile(MarxanRESTHandler):
                 raise MarxanServicesError(
                     "File '" + self.get_argument("filename") + "' does not exist")
             # see if suppressOutput is set
-            suppressOutput = '>/dev/null' if 'suppressOutput' in self.request.arguments else ''
+            suppressOutput = True if 'suppressOutput' in self.request.arguments else False
             # set the command
             cmd = 'sudo -u postgres psql -f ' + MARXAN_FOLDER + self.get_argument(
-                "filename") + ' postgresql://' + DATABASE_USER + ':' + DATABASE_PASSWORD + '@localhost:5432/marxanserver ' + suppressOutput
+                "filename") + ' postgresql://' + DATABASE_USER + ':' + DATABASE_PASSWORD + '@localhost:5432/marxanserver'
             # run the command
-            result = await _runCmd(cmd)
+            result = await _runCmd(cmd, suppressOutput)
             self.send_response({'info': result})
         except MarxanServicesError as e:
             _raiseError(self, e.args[0])
@@ -3601,9 +3682,11 @@ class shutdown(MarxanRESTHandler):
                         timezone.utc) + timedelta(minutes/1440)).isoformat())
                 # wait for so many minutes
                 await asyncio.sleep(minutes * 60)
+                logging.warning("marxan-server stopping due to shutdown event")
                 # delete the shutdown file
                 _deleteShutdownFile()
                 # shutdown the os
+                logging.warning("marxan-server stopped")
                 os.system('sudo shutdown now')
         except MarxanServicesError as e:
             _raiseError(self, e.args[0])
@@ -3664,7 +3747,8 @@ class MarxanWebSocketHandler(tornado.websocket.WebSocketHandler):
             if "user" in self.request.arguments.keys():
                 _setFolderPaths(self, self.request.arguments)
                 # get the project data
-                await _getProjectData(self)
+                if hasattr(self, 'folder_project'):
+                    await _getProjectData(self)
             # check the request is authenticated
             _authenticate(self)
             # get the requested method
@@ -3876,131 +3960,9 @@ class runMarxan(MarxanWebSocketHandler):
         except MarxanServicesError as e:
             self.close({'error': e.args[0]})
 
-# updates the WDPA table in PostGIS using the publically available downloadUrl
-
-
-class updateWDPA(MarxanWebSocketHandler):
-    # authenticate and get the user folder and project folders
-    async def open(self):
-        try:
-            await super().open({'info': "Updating WDPA.."})
-        except MarxanServicesError:  # authentication/authorisation error
-            pass
-        else:
-            try:
-                # download the new wdpa zip
-                self.send_response(
-                    {'status': 'Preprocessing', 'info': "Downloading " + self.get_argument("downloadUrl")})
-                await self.asyncDownload(self.get_argument("downloadUrl"), IMPORT_FOLDER + WDPA_DOWNLOAD_FILE)
-            except (MarxanServicesError) as e:  # download failed
-                self.close({'error': e.args[0], 'info': 'WDPA not updated'})
-            else:
-                self.send_response(
-                    {'status': 'Preprocessing', 'info': "Downloaded"})
-                try:
-                    # download finished - upzip the polygons shapefile
-                    self.send_response(
-                        {'status': 'Preprocessing', 'info': "Unzipping shapefile '" + WDPA_DOWNLOAD_FILE + "'"})
-                    rootfilename = await IOLoop.current().run_in_executor(None, _unzipFile, IMPORT_FOLDER, WDPA_DOWNLOAD_FILE, False, "polygons")
-                # error unzipping - either the polygons shapefile does not exist or the disk space has run out
-                except (MarxanServicesError) as e:
-                    # delete the zip file
-                    os.remove(IMPORT_FOLDER + WDPA_DOWNLOAD_FILE)
-                    self.close(
-                        {'error': e.args[0], 'info': 'WDPA not updated'})
-                else:
-                    self.send_response(
-                        {'status': 'Preprocessing', 'info': "Unzipped shapefile"})
-                    # delete the zip file
-                    os.remove(IMPORT_FOLDER + WDPA_DOWNLOAD_FILE)
-                    try:
-                        # import the new wdpa into a temporary PostGIS feature class in EPSG:4326
-                        # get a unique feature class name for the tmp imported feature class - this is necessary as ogr2ogr automatically creates a spatial index called <featureclassname>_geometry_geom_idx on import - which will end up being the name of the index on the wdpa table preventing further imports (as the index will already exist)
-                        feature_class_name = _getUniqueFeatureclassName(
-                            "wdpa_")
-                        self.send_response(
-                            {'status': "Preprocessing", 'info': "Importing '" + rootfilename + "' into PostGIS.."})
-                        # import the wdpa to a tmp feature class
-                        await pg.importShapefile(IMPORT_FOLDER, rootfilename + ".shp", feature_class_name, splitAtDateline=False)
-                        self.send_response(
-                            {'status': "Preprocessing", 'info': "Imported into '" + feature_class_name + "'"})
-                        # rename the existing wdpa feature class
-                        await pg.execute("ALTER TABLE marxan.wdpa RENAME TO wdpa_old;")
-                        self.send_response(
-                            {'status': "Preprocessing", 'info': "Renamed 'wdpa' to 'wdpa_old'"})
-                        # rename the tmp feature class
-                        await pg.execute(sql.SQL("ALTER TABLE marxan.{} RENAME TO wdpa;").format(sql.Identifier(feature_class_name)))
-                        self.send_response(
-                            {'status': "Preprocessing", 'info': "Renamed '" + feature_class_name + "' to 'wdpa'"})
-                        # drop the columns that are not needed
-                        await pg.execute("ALTER TABLE marxan.wdpa DROP COLUMN IF EXISTS ogc_fid,DROP COLUMN IF EXISTS wdpa_pid,DROP COLUMN IF EXISTS pa_def,DROP COLUMN IF EXISTS name,DROP COLUMN IF EXISTS orig_name,DROP COLUMN IF EXISTS desig_eng,DROP COLUMN IF EXISTS desig_type,DROP COLUMN IF EXISTS int_crit,DROP COLUMN IF EXISTS marine,DROP COLUMN IF EXISTS rep_m_area,DROP COLUMN IF EXISTS gis_m_area,DROP COLUMN IF EXISTS rep_area,DROP COLUMN IF EXISTS gis_area,DROP COLUMN IF EXISTS no_take,DROP COLUMN IF EXISTS no_tk_area,DROP COLUMN IF EXISTS status_yr,DROP COLUMN IF EXISTS gov_type,DROP COLUMN IF EXISTS own_type,DROP COLUMN IF EXISTS mang_auth,DROP COLUMN IF EXISTS mang_plan,DROP COLUMN IF EXISTS verif,DROP COLUMN IF EXISTS metadataid,DROP COLUMN IF EXISTS sub_loc,DROP COLUMN IF EXISTS parent_iso;")
-                        self.send_response(
-                            {'status': "Preprocessing", 'info': "Removed unneccesary columns"})
-                        # delete the old wdpa feature class
-                        await pg.execute("DROP TABLE IF EXISTS marxan.wdpa_old;")
-                        self.send_response(
-                            {'status': "Preprocessing", 'info': "Deleted 'wdpa_old' table"})
-                        # delete all of the existing dissolved country wdpa feature classes
-                        await pg.execute("SELECT * FROM marxan.deleteDissolvedWDPAFeatureClasses()")
-                        self.send_response(
-                            {'status': "Preprocessing", 'info': "Deleted dissolved country WDPAP feature classes"})
-                    except (OSError) as e:  # TODO Add other exception classes especially PostGIS ones
-                        self.close(
-                            {'error': 'No space left on device importing the WDPA into PostGIS', 'info': 'WDPA not updated'})
-                    else:
-                        # update the WDPA_VERSION variable in the server.dat file
-                        _updateParameters(MARXAN_FOLDER + SERVER_CONFIG_FILENAME,
-                                          {"WDPA_VERSION": self.get_argument("wdpaVersion")})
-                        # delete all of the existing intersections between planning units and the old version of the WDPA
-                        self.send_response(
-                            {'status': "Preprocessing", 'info': 'Invalidating existing WDPA intersections'})
-                        _invalidateProtectedAreaIntersections()
-                        # send the response
-                        self.close(
-                            {'info': 'WDPA update completed succesfully'})
-                    finally:
-                        # delete the shapefile
-                        _deleteZippedShapefile(
-                            IMPORT_FOLDER, WDPA_DOWNLOAD_FILE, rootfilename)
-
-    async def asyncDownload(self, url, file):
-        # initialise a variable to hold the size downloaded
-        file_size_dl = 0
-        try:
-            async with aiohttp.ClientSession() as session:
-                try:
-                    timeout = aiohttp.ClientTimeout(total=None)
-                    async with aiohttp.ClientSession(timeout=timeout) as session:
-                        async with session.get(url) as resp:
-                            # get the file size
-                            file_size = resp.headers["Content-Length"]
-                            try:
-                                with open(file, 'wb') as f:
-                                    while True:
-                                        chunk = await resp.content.read(100000000)
-                                        if not chunk:
-                                            break
-                                        f.write(chunk)
-                                        file_size_dl += len(chunk)
-                                        self.ping_message = str(
-                                            int((file_size_dl/int(file_size))*100)) + "% downloaded"
-                            except Exception as e:
-                                raise MarxanServicesError(
-                                    "Error getting a file: %s" % e)
-                            finally:
-                                f.close()
-                except Exception as e:
-                    raise MarxanServicesError(
-                        "Error getting the url: %s" % url)
-        except (OSError) as e:  # out of disk space probably
-            f.close()
-            os.remove(file)
-            raise MarxanServicesError("Out of disk space on device")
-        finally:
-            await session.close()
-
-
 # imports a set of features from an unzipped shapefile
+
+
 class importFeatures(MarxanWebSocketHandler):
     async def open(self):
         try:
@@ -4525,7 +4487,7 @@ class preprocessFeature(QueryWebSocketHandler):
                     'feature_class_name'), "pu_area": str(record.iloc[0]['pu_area']), "pu_count": str(record.iloc[0]['pu_count']), "id": str(speciesId)})
 
 
-# preprocesses the protected areas by intersecting them with the planning units
+# preprocesses the protected areas by intersecting them with the planning grid
 # wss://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/preprocessProtectedAreas?user=andrew&project=Tonga%20marine%2030km2&planning_grid_name=pu_ton_marine_hexagon_30
 class preprocessProtectedAreas(QueryWebSocketHandler):
     async def open(self):
@@ -4537,19 +4499,37 @@ class preprocessProtectedAreas(QueryWebSocketHandler):
             _validateArguments(self.request.arguments, [
                                'user', 'project', 'planning_grid_name'])
             # do the intersection with the protected areas
-            intersectionData = await self.executeQuery(sql.SQL("SELECT DISTINCT iucn_cat, grid.puid FROM marxan.wdpa, marxan.{} grid WHERE ST_Intersects(wdpa.geometry, grid.geometry) AND wdpaid IN (SELECT wdpaid FROM (SELECT envelope FROM marxan.metadata_planning_units WHERE feature_class_name =  %s) AS sub, marxan.wdpa WHERE ST_Intersects(wdpa.geometry, envelope)) ORDER BY 1,2").format(sql.Identifier(self.get_argument('planning_grid_name'))), data=[self.get_argument('planning_grid_name')], returnFormat="DataFrame")
-            # write the intersections to file
-            intersectionData.to_csv(
-                self.folder_input + PROTECTED_AREA_INTERSECTIONS_FILENAME, index=False)
-            # get the data
+            await _preprocessProtectedAreas(self, self.get_argument('planning_grid_name'), self.folder_input)
+            # get the data to return to the client
             _getProtectedAreaIntersectionsData(self)
             # set the response
             self.close({'info': 'Preprocessing finished',
                         'intersections': self.protectedAreaIntersectionsData})
 
+# redoes the preprocessesing of protected areas for all projects for the user by intersecting them with their planning grids - if the user is case_studies then the case studies folder if redone. Useful after the WDPA has been updated
+# wss://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/reprocessProtectedAreas?user=case_studies
+
+
+class reprocessProtectedAreas(QueryWebSocketHandler):
+    async def open(self):
+        try:
+            await super().open({'info': "Reprocessing protected areas for projects"})
+        except MarxanServicesError:  # authentication/authorisation error
+            pass
+        else:
+            _validateArguments(self.request.arguments, ['user'])
+            # get the folder to process
+            folder = CASE_STUDIES_FOLDER if self.get_argument(
+                'user') == 'case_studies' else self.get_argument('user')
+            # reprocess the folder
+            await _reprocessProtectedAreas(self, folder)
+            # set the response
+            self.close({'info': 'Reprocessing finished'})
 
 # preprocesses the planning units to get the boundary lengths where they intersect - produces the bounds.dat file
 # wss://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/preprocessPlanningUnits?user=admin&project=Start%20project
+
+
 class preprocessPlanningUnits(QueryWebSocketHandler):
     async def open(self):
         try:
@@ -4707,6 +4687,164 @@ class resetDatabase(QueryWebSocketHandler):
                 await _cleanup()
                 self.close({'info': "Reset complete"})
 
+# updates the WDPA table in PostGIS using the publically available downloadUrl
+
+
+class updateWDPA(QueryWebSocketHandler):
+    # authenticate and get the user folder and project folders
+    async def open(self):
+        try:
+            await super().open({'info': "Updating WDPA.."})
+        except MarxanServicesError:  # authentication/authorisation error
+            pass
+        else:
+            _validateArguments(self.request.arguments, ['downloadUrl'])
+            if "unittest" in list(self.request.arguments.keys()):
+                unittest = True
+                # if we are running a unit test then download the WDPA from a minimal zipped file geodatabase on google storage
+                downloadUrl = 'https://storage.googleapis.com/geeimageserver.appspot.com/WDPA_Jun2020.zip'
+            else:
+                unittest = False
+                downloadUrl = self.get_argument("downloadUrl")
+            try:
+                # download the new wdpa zip
+                self.send_response(
+                    {'status': 'Preprocessing', 'info': "Downloading " + downloadUrl})
+                await self.asyncDownload(downloadUrl, IMPORT_FOLDER + WDPA_DOWNLOAD_FILE)
+            except (MarxanServicesError) as e:  # download failed
+                self.close({'error': e.args[0], 'info': 'WDPA not updated'})
+            else:
+                self.send_response(
+                    {'status': 'Preprocessing', 'info': "WDPA downloaded"})
+                try:
+                    # download finished - upzip the file geodatabase
+                    self.send_response(
+                        {'status': 'Preprocessing', 'info': "Unzipping file geodatabase '" + WDPA_DOWNLOAD_FILE + "'"})
+                    files = await IOLoop.current().run_in_executor(None, _unzipFile, IMPORT_FOLDER, WDPA_DOWNLOAD_FILE)
+                    # check the contents of the unzipped file - the contents should include a folder ending in .gdb - this is the file geodatabase
+                    fileGDBPath = [f for f in files if f[-5:]
+                                   == '.gdb' + os.sep][0]
+                except IndexError:  # file geodatabase not found
+                    self.close(
+                        {'error': "The WDPA file geodatabase was not found in the zip file", 'info': 'WDPA not updated'})
+                # error unzipping - probably the disk space has run out
+                except (MarxanServicesError) as e:
+                    self.close(
+                        {'error': e.args[0], 'info': 'WDPA not updated'})
+                else:
+                    self.send_response(
+                        {'status': 'Preprocessing', 'info': "Unzipped file geodatabase"})
+                    # delete the zip file
+                    os.remove(IMPORT_FOLDER + WDPA_DOWNLOAD_FILE)
+                    # get the name of the source feature class - this will be WDPA_poly_<shortmonth><year>, e.g. WDPA_poly_Jun2020 and can be taken from the file geodatabase path, e.g. WDPA_Jun2020_Public/WDPA_Jun2020_Public.gdb/
+                    sourceFeatureClass = 'WDPA_poly_' + fileGDBPath[5:12]
+                    try:
+                        # import the new wdpa into a temporary PostGIS feature class in EPSG:4326
+                        # get a unique feature class name for the tmp imported feature class - this is necessary as ogr2ogr automatically creates a spatial index called <featureclassname>_geometry_geom_idx on import - which will end up being the name of the index on the wdpa table preventing further imports (as the index will already exist)
+                        feature_class_name = _getUniqueFeatureclassName(
+                            "wdpa_")
+                        self.send_response(
+                            {'status': "Preprocessing", 'info': "Importing '" + sourceFeatureClass + "' into PostGIS.."})
+                        # import the wdpa to a tmp feature class
+                        await pg.importFileGDBFeatureClass(IMPORT_FOLDER, fileGDBPath, sourceFeatureClass, feature_class_name, splitAtDateline=False)
+                        self.send_response(
+                            {'status': "Preprocessing", 'info': "Imported into '" + feature_class_name + "'"})
+                        if not unittest:
+                            # rename the existing wdpa feature class
+                            await pg.execute("ALTER TABLE marxan.wdpa RENAME TO wdpa_old;")
+                            self.send_response(
+                                {'status': "Preprocessing", 'info': "Renamed 'wdpa' to 'wdpa_old'"})
+                            # rename the tmp feature class
+                            await pg.execute(sql.SQL("ALTER TABLE marxan.{} RENAME TO wdpa;").format(sql.Identifier(feature_class_name)))
+                            self.send_response(
+                                {'status': "Preprocessing", 'info': "Renamed '" + feature_class_name + "' to 'wdpa'"})
+                            # drop the columns that are not needed
+                            await pg.execute("ALTER TABLE marxan.wdpa DROP COLUMN IF EXISTS ogc_fid,DROP COLUMN IF EXISTS wdpa_pid,DROP COLUMN IF EXISTS pa_def,DROP COLUMN IF EXISTS name,DROP COLUMN IF EXISTS orig_name,DROP COLUMN IF EXISTS desig_eng,DROP COLUMN IF EXISTS desig_type,DROP COLUMN IF EXISTS int_crit,DROP COLUMN IF EXISTS marine,DROP COLUMN IF EXISTS rep_m_area,DROP COLUMN IF EXISTS gis_m_area,DROP COLUMN IF EXISTS rep_area,DROP COLUMN IF EXISTS gis_area,DROP COLUMN IF EXISTS no_take,DROP COLUMN IF EXISTS no_tk_area,DROP COLUMN IF EXISTS status_yr,DROP COLUMN IF EXISTS gov_type,DROP COLUMN IF EXISTS own_type,DROP COLUMN IF EXISTS mang_auth,DROP COLUMN IF EXISTS mang_plan,DROP COLUMN IF EXISTS verif,DROP COLUMN IF EXISTS metadataid,DROP COLUMN IF EXISTS sub_loc,DROP COLUMN IF EXISTS parent_iso;")
+                            self.send_response(
+                                {'status': "Preprocessing", 'info': "Removed unneccesary columns"})
+                            # delete the old wdpa feature class
+                            await pg.execute("DROP TABLE IF EXISTS marxan.wdpa_old;")
+                            self.send_response(
+                                {'status': "Preprocessing", 'info': "Deleted 'wdpa_old' table"})
+                            # delete all of the existing dissolved country wdpa feature classes
+                            await pg.execute("SELECT * FROM marxan.deleteDissolvedWDPAFeatureClasses()")
+                            self.send_response(
+                                {'status': "Preprocessing", 'info': "Deleted dissolved country WDPA feature classes"})
+                        else:
+                            # delete the tmp feature
+                            await pg.execute(sql.SQL("DROP TABLE IF EXISTS marxan.{}").format(sql.Identifier(feature_class_name)))
+                            self.send_response(
+                                {'status': "Preprocessing", 'info': "Unittest has not replaced existing WDPA file"})
+                    except (OSError) as e:  # TODO Add other exception classes especially PostGIS ones
+                        self.close(
+                            {'error': 'No space left on device importing the WDPA into PostGIS', 'info': 'WDPA not updated'})
+                    else:
+                        if not unittest:
+                            # delete all of the existing intersections between planning units and the old version of the WDPA
+                            self.send_response(
+                                {'status': "Preprocessing", 'info': 'Invalidating existing WDPA intersections'})
+                            _invalidateProtectedAreaIntersections()
+                            # redo the protected area preprocessing on any of the case studies that are included by default with all newly registered users - otherwise the existing data in the input/protected_area_intersections.dat files will be out-of-date
+                            await _reprocessProtectedAreas(self, CASE_STUDIES_FOLDER)
+                            # update the WDPA_VERSION variable in the server.dat file
+                            _updateParameters(
+                                MARXAN_FOLDER + SERVER_CONFIG_FILENAME, {"WDPA_VERSION": self.get_argument("wdpaVersion")})
+                        else:
+                            self.send_response(
+                                {'status': "Preprocessing", 'info': "Unittest has not invalidated existing WDPA intersections"})
+                        # send the response
+                        self.close(
+                            {'info': 'WDPA update completed succesfully'})
+                finally:
+                    # delete the zip file
+                    if os.path.exists(IMPORT_FOLDER + WDPA_DOWNLOAD_FILE):
+                        os.remove(IMPORT_FOLDER + WDPA_DOWNLOAD_FILE)
+                    # delete the unzipped files
+                    for f in files:
+                        if os.path.exists(IMPORT_FOLDER + f):
+                            try:
+                                os.remove(IMPORT_FOLDER + f)
+                            except IsADirectoryError:
+                                shutil.rmtree(IMPORT_FOLDER + f)
+
+    async def asyncDownload(self, url, file):
+        # initialise a variable to hold the size downloaded
+        file_size_dl = 0
+        try:
+            async with aiohttp.ClientSession() as session:
+                try:
+                    timeout = aiohttp.ClientTimeout(total=None)
+                    async with aiohttp.ClientSession(timeout=timeout) as session:
+                        async with session.get(url) as resp:
+                            # get the file size
+                            file_size = resp.headers["Content-Length"]
+                            try:
+                                with open(file, 'wb') as f:
+                                    while True:
+                                        chunk = await resp.content.read(100000000)
+                                        if not chunk:
+                                            break
+                                        f.write(chunk)
+                                        file_size_dl += len(chunk)
+                                        self.ping_message = str(
+                                            int((file_size_dl/int(file_size))*100)) + "% downloaded"
+                            except Exception as e:
+                                raise MarxanServicesError(
+                                    "Error getting a file: %s" % e)
+                            finally:
+                                f.close()
+                                # remove the ping message otherwise this will be shown every 30 seconds
+                                delattr(self, 'ping_message')
+                except Exception as e:
+                    raise MarxanServicesError(
+                        "Error getting the url: %s" % url)
+        except (OSError) as e:  # out of disk space probably
+            f.close()
+            os.remove(file)
+            raise MarxanServicesError("Out of disk space on device")
+        finally:
+            await session.close()
+
 ####################################################################################################################################################################################################################################################################
 # tornado functions
 ####################################################################################################################################################################################################################################################################
@@ -4791,6 +4929,7 @@ class Application(tornado.web.Application):
             ("/marxan-server/preprocessFeature", preprocessFeature),
             ("/marxan-server/preprocessPlanningUnits", preprocessPlanningUnits),
             ("/marxan-server/preprocessProtectedAreas", preprocessProtectedAreas),
+            ("/marxan-server/reprocessProtectedAreas", reprocessProtectedAreas),
             ("/marxan-server/runMarxan", runMarxan),
             ("/marxan-server/stopProcess", stopProcess),
             ("/marxan-server/getRunLogs", getRunLogs),
@@ -4894,7 +5033,6 @@ async def initialiseApp():
     # close the database connection
     pg.pool.close()
     await pg.pool.wait_closed()
-    logging.warning("marxan-server stopped automatically")
 
 if __name__ == "__main__":
     try:
@@ -4903,9 +5041,10 @@ if __name__ == "__main__":
             tornado.ioloop.IOLoop.current().run_sync(initialiseApp)
         except KeyboardInterrupt:
             _deleteShutdownFile()
+            logging.warning("marxan-server stopping due to KeyboardInterrupt")
             pass
         finally:
-            logging.warning("marxan-server stopped by KeyboardInterrupt")
+            logging.warning("marxan-server stopped")
             SHUTDOWN_EVENT.set()
 
     except Exception as e:

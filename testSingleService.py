@@ -87,10 +87,15 @@ class TestClass(AsyncHTTPTestCase):
         return self._app
     
     @gen_test
-    def tearDown(self):
+    def tearDownHelper(self):
+        # From Ben Darnell article: https://stackoverflow.com/a/32992727
         #free the database connection
         m.pg.pool.close()
         yield m.pg.pool.wait_closed()
+        
+    def tearDown(self):
+        self.tearDownHelper()
+        super().tearDown()
         
     def getDictResponse(self, response, mustReturnError):
         """
@@ -233,8 +238,8 @@ class TestClass(AsyncHTTPTestCase):
     # def test_1450_updateCosts(self):
     #     self.makeRequest('/updateCosts?user=admin&project=Start%20project&costname=Uniform', False)
     
-    def test_2200_exportPlanningUnitGrid(self):
-        self.makeRequest('/exportPlanningUnitGrid?name=pu_ton_marine_hexagon_50', False)
+    # def test_2200_exportPlanningUnitGrid(self):
+    #     self.makeRequest('/exportPlanningUnitGrid?name=pu_ton_marine_hexagon_50', False)
 
     # def test_2201_exportFeature(self):
     #     self.makeRequest('/exportFeature?name=intersesting_habitat', False)
@@ -252,6 +257,9 @@ class TestClass(AsyncHTTPTestCase):
     #     self.makeRequest('/updateProjectParameters', False, method="POST", body=body)
 
     # #WebSocket request
-    # def test_2300_createPlanningUnitGrid(self):
-    #     self.makeWebSocketRequest('/createPlanningUnitGrid?iso3=AND&domain=Terrestrial&areakm2=50&shape=square', False)
+    # def test_2300_updateWDPA(self):
+    #     self.makeWebSocketRequest('/updateWDPA?downloadUrl=whatever&unittest=True', False)
+    
+    def test_2301_reprocessProtectedAreas(self):
+        self.makeWebSocketRequest('/reprocessProtectedAreas?user=case_studies', False)
     
