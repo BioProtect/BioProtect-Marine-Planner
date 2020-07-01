@@ -1789,6 +1789,7 @@ def _setCORS(obj):
         # check the origin is permitted either by being in the list of permitted domains or if the referer and host are on the same machine, i.e. not cross domain - OR if a permitted method is being called
         if (origin in PERMITTED_DOMAINS) or (referer.find(obj.request.host_name) != -1) or (method in PERMITTED_METHODS):
             obj.set_header("Access-Control-Allow-Origin", origin)
+            print('origin: ', origin)
             obj.set_header("Access-Control-Allow-Credentials", "true")
         else:
             # , reason = "The origin '" + referer + "' does not have permission to access the service (CORS error)"
@@ -2251,8 +2252,6 @@ class MarxanSubprocess(Popen):
 class MarxanRESTHandler(tornado.web.RequestHandler):
     # to prevent CORS errors in the client
     def set_default_headers(self):
-        print('set_default_headers: ')
-        print('DISABLE_SECURITY: ', DISABLE_SECURITY)
         if DISABLE_SECURITY:
             # The value of the 'Access-Control-Allow-Origin' header in the response must not be the wildcard '*' when the request's credentials mode is 'include'
             # self.set_header("Access-Control-Allow-Origin", "*")

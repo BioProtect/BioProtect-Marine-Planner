@@ -4,7 +4,7 @@
   "SERVER_NAME": "database",
   "SERVER_DESCRIPTION": "marxanserver database",
   "COOKIE_RANDOM_VALUE": "67259876128763981763982170396198736",
-  "PERMITTED_DOMAINS": "http://localhost,http://0.0.0.0,http://vmdai35.datascienceinstitute.ie/",
+  "PERMITTED_DOMAINS": "http://localhost,http://0.0.0.0,http://vmdai35.datascienceinstitute.ie",
   "DATABASE_NAME": "marxanserver",
   "DATABASE_HOST": "database",
   "DATABASE_USER": "postgres",
