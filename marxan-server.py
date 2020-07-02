@@ -195,6 +195,8 @@ async def _setGlobalVariables():
     COOKIE_RANDOM_VALUE = _getDictValue(serverData, 'COOKIE_RANDOM_VALUE')
     PERMITTED_DOMAINS = _getDictValue(
         serverData, 'PERMITTED_DOMAINS').split(",")
+    print('PERMITTED_DOMAINS ------------------------------------------------------------------------')
+    print('PERMITTED_DOMAINS: ', PERMITTED_DOMAINS)
     PLANNING_GRID_UNITS_LIMIT = int(_getDictValue(
         serverData, 'PLANNING_GRID_UNITS_LIMIT'))
     # get the GDAL_DATA environment variable
@@ -362,7 +364,6 @@ def _getUsers():
     not_user_folders = ["input", "output", "MarxanData", "MarxanData_unix"]
     # get a list of folders underneath the marxan users folder
     user_folders = glob.glob(MARXAN_USERS_FOLDER + "*/")
-    print('user_folders: ', user_folders)
     # convert these into a list of users
     users = [user[:-1][user[:-1].rfind(os.sep)+1:] for user in user_folders]
     for folder in not_user_folders:
@@ -640,10 +641,7 @@ def _getServerData(obj):
 
 # get the data on the user from the user.dat file
 def _getUserData(obj):
-    print('obj: ', obj)
     data = _getKeyValuesFromFile(obj.folder_user + USER_DATA_FILENAME)
-    print('USER_DATA_FILENAME: ', USER_DATA_FILENAME)
-    print('data: ', data)
     # set the userData attribute on this object
     obj.userData = data
 
@@ -1761,6 +1759,7 @@ def _checkCORS(obj):
     print('obj.request.host[:9]: ', obj.request.host[:9])
     print('DISABLE_SECURITY: ', DISABLE_SECURITY)
     if (DISABLE_SECURITY or obj.request.host[:9] == "localhost" or (obj.current_user == GUEST_USERNAME)):
+        print("SECURITY IS DISABLED.....................................................................")
         return
     # set the CORS headers
     _setCORS(obj)
@@ -1886,8 +1885,14 @@ def _getShapefileFieldNames(shapefile):
 
 # returns True if the users project is currently running
 def _isProjectRunning(user, project):
+    print('_isProjectRunning...................................................................................')
+    print('project: ', project)
+    print('user: ', user)
+    print('RUN_LOG_FILENAME: ', RUN_LOG_FILENAME)
+    print('MARXAN_FOLDER: ', MARXAN_FOLDER)
     # get the data from the run log file
     df = _loadCSV(MARXAN_FOLDER + RUN_LOG_FILENAME)
+    print('df: ', df)
     # filter for running projects from the passed user and project
     return not df.loc[(df['status'] == 'Running') & (df["user"] == user) & (df["project"] == project)].empty
 
@@ -3996,7 +4001,6 @@ class importFeatures(MarxanWebSocketHandler):
                     splitfield = self.get_argument('splitfield')
                     features = await pg.execute(sql.SQL("SELECT {splitfield} FROM marxan.{scratchTable}").format(splitfield=sql.Identifier(splitfield), scratchTable=sql.Identifier(scratch_name)), returnFormat="DataFrame")
                     feature_names = list(set(features[splitfield].tolist()))
-                    print('feature_names: ', feature_names)
                     # if they are not unique then return an error
                     # if (len(feature_names) != len(set(feature_names))):
                     #     raise MarxanServicesError("Feature names are not unique for the field '" + splitfield + "'")

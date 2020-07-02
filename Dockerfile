@@ -5,9 +5,6 @@ RUN apt-get update && \
     && apt-get autoremove \
     && rm -rf /var/lib/apt/lists/*
 
-# RUN add-apt-repository ppa:ubuntugis/ppa  && \ 
-#     apt-get update 
-
 RUN apt-get update && apt-get install -y build-essential \
     python3 \
     gdal-data \ 
@@ -28,18 +25,19 @@ RUN pip3 install gdal
 #==$(gdal-config --version)
 
 COPY requirements.txt requirements.txt
-COPY server.dat server.dat
-COPY . .
-
 RUN pip3 install -r requirements.txt
 
-COPY users users 
+
+COPY server.dat marxan-server/server.dat
+COPY users marxan-server/users 
+COPY . marxan-server/.
 
 # RUN ln -sf /proc/self/fd/1 /var/log/nginx/access.log && \
 #     ln -sf /proc/self/fd/1 /var/log/nginx/error.log
 ADD https://github.com/ufoscout/docker-compose-wait/releases/download/2.7.3/wait /wait
-RUN chmod +x /wait && chmod a+x marxan-server.py
+WORKDIR marxan-server/
+RUN chmod +x ../wait && chmod a+x marxan-server.py
 
 EXPOSE 80
 
-CMD /wait && python3 marxan-server.py
+CMD ../wait && python3 marxan-server.py
