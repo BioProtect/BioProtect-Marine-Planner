@@ -12,7 +12,7 @@
   "CERTFILE": "None",
   "KEYFILE": "None",
   "PORT": 80,
-  "WDPA_VERSION": "August 2017",
+  "WDPA_VERSION": "July 2020",
   "PLANNING_GRID_UNITS_LIMIT": 100000,
   "DISABLE_SECURITY": true,
   "DISABLE_FILE_LOGGING": false

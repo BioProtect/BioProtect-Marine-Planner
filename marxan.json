@@ -122,7 +122,7 @@
     }
   ],
   "WDPA": {
-    "latest_version": "June 2020",
+    "latest_version": "July 2020",
     "downloadUrl": "http://wcmc.io/wdpa_current_release",
     "tilesUrl": "https://geospatial.jrc.ec.europa.eu/geoserver/gwc/service/wmts?",
     "metadataUrl": "https://www.protectedplanet.net/c/monthly-updates/2020/jun-2020-update-of-the-wdpa"

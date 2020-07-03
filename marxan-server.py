@@ -159,7 +159,7 @@ async def _setGlobalVariables():
     global DISABLE_SECURITY
     global DISABLE_FILE_LOGGING
     global ENABLE_RESET
-    global pg
+    global pgp
     # get data from the marxan registry
     MBAT = _getMBAT()
     # initialise colorama to be able to show log messages on windows in color
@@ -168,6 +168,7 @@ async def _setGlobalVariables():
     psycopg2.extensions.register_adapter(numpy.int64, psycopg2._psycopg.AsIs)
     # get the folder from this files path
     MARXAN_FOLDER = os.path.dirname(os.path.realpath(__file__)) + os.sep
+
     # get the data in the server configuration file
     serverData = buildDataDict(MARXAN_FOLDER + 'config.json')
     # get the database connection string
@@ -1007,6 +1008,8 @@ async def _updatePuFile(obj, status1_ids, status2_ids, status3_ids):
 
 # loads a csv file and returns the data as a dataframe or an empty dataframe if the file does not exist. If errorIfNotExists is True then it raises an error.
 def _loadCSV(filename, errorIfNotExists=False):
+    print('_loadCSV: ')
+    print('filename: ', filename)
     if (os.path.exists(filename)):
         # sep = None forces the Python parsing engine to detect the separator as it can be tab or comman in marxan
         df = pandas.read_csv(filename, sep=None, engine='python')
@@ -1030,6 +1033,8 @@ async def _writeCSV(obj, fileToWrite, df, writeIndex=False):
 
 # writes the dataframe to the file - for files not managed in the input.dat file or if the filename has not yet been set in the input.dat file
 def _writeToDatFile(file, dataframe):
+    print('_writeToDatFile: ')
+    print('file: ', file)
     # see if the file exists
     if (os.path.exists(file)):
         # read the current data
@@ -1900,7 +1905,11 @@ def _isProjectRunning(user, project):
 # gets the data from the run log as a dataframe
 def _getRunLogs():
     # get the data from the run log file
+    print('RUN_LOG_FILENAME: ', RUN_LOG_FILENAME)
+    print('MARXAN_FOLDER: ', MARXAN_FOLDER)
     df = _loadCSV(MARXAN_FOLDER + RUN_LOG_FILENAME)
+    print('df: ', df)
+
     # for those processes that are running, update the number of runs completed
     runningProjects = df.loc[df['status'] == 'Running']
     for index, row in runningProjects.iterrows():
@@ -3728,6 +3737,8 @@ class MarxanWebSocketHandler(tornado.websocket.WebSocketHandler):
 
     # check CORS access for the websocket
     def check_origin(self, origin):
+        print('check_origin: ')
+        print('DISABLE_SECURITY: ', DISABLE_SECURITY)
         if DISABLE_SECURITY:
             return True
         # the request is valid for CORS if the origin is in the list of permitted domains, or the origin is the same as the host, i.e. same machine

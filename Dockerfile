@@ -27,11 +27,11 @@ RUN pip3 install gdal
 COPY requirements.txt requirements.txt
 RUN pip3 install -r requirements.txt
 
-
-COPY server.dat marxan-server/server.dat
-COPY runlog.dat marxan-server/runlog.dat
 COPY users marxan-server/users 
 COPY . marxan-server/.
+COPY server.dat.prod marxan-server/server.dat
+COPY runlog.dat marxan-server/runlog.dat
+COPY config_prod.json marxan-server/config.json
 
 # RUN ln -sf /proc/self/fd/1 /var/log/nginx/access.log && \
 #     ln -sf /proc/self/fd/1 /var/log/nginx/error.log
