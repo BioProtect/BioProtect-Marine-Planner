@@ -8,4 +8,4 @@ mapbox
 aiopg
 aiohttp
 requests
-
+google-cloud-logging 

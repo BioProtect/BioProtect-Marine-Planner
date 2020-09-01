@@ -1,11 +1,12 @@
 {
   "ENABLE_GUEST_USER": true,
+  "ENABLE_RESET": false,
   "SERVER_NAME": "database",
   "SERVER_DESCRIPTION": "marxanserver database",
   "COOKIE_RANDOM_VALUE": "67259876128763981763982170396198736",
-  "PERMITTED_DOMAINS": "*",
+  "PERMITTED_DOMAINS": "http://vmdai35.datascienceinstitute.ie",
   "DATABASE_NAME": "marxanserver",
-  "DATABASE_HOST": "localhost",
+  "DATABASE_HOST": "database",
   "DATABASE_USER": "postgres",
   "DATABASE_PASSWORD": "oxen4chit",
   "CERTFILE": "None",
@@ -13,6 +14,6 @@
   "PORT": 80,
   "WDPA_VERSION": "August 2017",
   "PLANNING_GRID_UNITS_LIMIT": 100000,
-  "DISABLE_SECURITY": false,
+  "DISABLE_SECURITY": true,
   "DISABLE_FILE_LOGGING": false
 }

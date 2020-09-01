@@ -1,5 +1,7 @@
 server.dat
 marxan-server.log
+runlog.dat
 users/admin/user.dat
 *.pyc
-/__pycache__/
+.~*
+dump.sql
