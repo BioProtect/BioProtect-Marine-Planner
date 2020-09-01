@@ -3,8 +3,5 @@ marxan-server.log
 runlog.dat
 users/admin/user.dat
 *.pyc
-/__pycache__/
-/users/cartig/
-MarOpt_v243_Linux32
-MarOpt_v243_Mac32
-MarOpt_v243_Mac64
+.~*
+dump.sql

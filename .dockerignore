@@ -3,5 +3,7 @@
 MarOpt_v243_Linux32
 unix*
 /test-data/
-/users/admin/
-*.default
+architecture-server.png
+test.sql
+test*.py
+unix*.sh

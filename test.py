@@ -1,12 +1,11 @@
-#unit tests for marxan-server.py. 
-# To test:
-# 1. change to the marxan-server directory
-# 2. conda activate base (or the conda environment used to install marxan-server)
-# 3. Run the following (the -W option disables all warnings - if you omit it you will see ResourceWarnings for things like Sockets not closing when you start an upload the Mapbox and the unit tests stop)
-#    python -W ignore -m unittest test -v
-# To test against an SSL localhost:
-# 1. Replace all AsyncHTTPTestCase with AsyncHTTPSTestCase
-# 2. Set TEST_HTTP, TEST_WS and TEST_REFERER to point to secure endpoints, e.g. https and wss
+#
+# Copyright (c) 2020 Andrew Cottam.
+#
+# This file is part of marxan-server
+# (see https://github.com/marxanweb/marxan-server).
+#
+# License: European Union Public Licence V. 1.2, see https://opensource.org/licenses/EUPL-1.2
+#
 import unittest, importlib, tornado, aiopg, json, urllib, os, sys, shutil
 from tornado.testing import AsyncHTTPTestCase, gen_test
 from tornado.ioloop import IOLoop
@@ -493,12 +492,14 @@ class TestClass(AsyncHTTPTestCase):
     def test_073_updateWdpa(self):
         self.makeWebSocketRequest('/updateWDPA?downloadUrl=whatever&unittest=True', False)
 
-    def test_074_logout(self):
+    def test_074_cleanup(self):
+        self.makeRequest('/cleanup?', False)
+        
+    def test_075_logout(self):
         self.makeRequest('/logout', False)
 
     # ("/resendPassword", resendPassword), #no unit test required
     # ("/stopProcess", stopProcess), #cant easily unit test
-    # ("/updateWDPA", updateWDPA), #cant easily unit test at the moment because we dont have the april 2020 wdpa online
     # ("/shutdown", shutdown), #not a good idea to test this!
     # ("/block", block), #no unit test required
         

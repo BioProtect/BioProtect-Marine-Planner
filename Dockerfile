@@ -1,3 +1,4 @@
+
 FROM ubuntu:20.04 as server
 RUN apt-get update && \
     apt-get install -y software-properties-common \
@@ -27,18 +28,22 @@ RUN pip3 install gdal
 COPY requirements.txt requirements.txt
 RUN pip3 install -r requirements.txt
 
-COPY users marxan-server/users 
 COPY . marxan-server/.
-COPY server.dat.prod marxan-server/server.dat
-COPY runlog.dat marxan-server/runlog.dat
-COPY config_prod.json marxan-server/config.json
+
+COPY server.dat.docker marxan-server/server.dat
+COPY runlog.dat.default marxan-server/runlog.dat
+COPY users/admin/user.dat.default marxan-server/users/admin/user.dat
+COPY marxan-server.log.default marxan-server/marxan-server.log
+COPY _marxan_web_resources marxan-server/_marxan_web_resources
 
 # RUN ln -sf /proc/self/fd/1 /var/log/nginx/access.log && \
 #     ln -sf /proc/self/fd/1 /var/log/nginx/error.log
-ADD https://github.com/ufoscout/docker-compose-wait/releases/download/2.7.3/wait /wait
+# ADD https://github.com/ufoscout/docker-compose-wait/releases/download/2.7.3/wait /wait
 WORKDIR marxan-server/
-RUN chmod +x ../wait && chmod a+x marxan-server.py
+# RUN chmod +x ../wait && chmod a+x marxan-server.py
+RUN chmod a+x marxan-server.py
 
 EXPOSE 80
 
-CMD ../wait && python3 marxan-server.py
+# CMD ../wait && python3 marxan-server.py
+CMD python3 marxan-server.py
