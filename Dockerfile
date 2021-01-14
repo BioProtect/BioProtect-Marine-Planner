@@ -38,12 +38,12 @@ COPY _marxan_web_resources marxan-server/_marxan_web_resources
 
 # RUN ln -sf /proc/self/fd/1 /var/log/nginx/access.log && \
 #     ln -sf /proc/self/fd/1 /var/log/nginx/error.log
-# ADD https://github.com/ufoscout/docker-compose-wait/releases/download/2.7.3/wait /wait
+ADD https://github.com/ufoscout/docker-compose-wait/releases/download/2.7.3/wait /wait
 WORKDIR marxan-server/
-# RUN chmod +x ../wait && chmod a+x marxan-server.py
-RUN chmod a+x marxan-server.py
+RUN chmod +x ../wait && chmod a+x marxan-server.py
+# RUN chmod a+x marxan-server.py
 
 EXPOSE 80
 
-# CMD ../wait && python3 marxan-server.py
-CMD python3 marxan-server.py
+CMD ../wait && python3 marxan-server.py
+# CMD python3 marxan-server.py
