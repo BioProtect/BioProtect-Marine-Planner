@@ -5,3 +5,6 @@ users/admin/user.dat
 *.pyc
 .~*
 dump.sql
+
+/*.backup/
+/*.sql/
