@@ -316,7 +316,8 @@ async def _setGlobalVariables():
     else:
         ogr2ogr_executable = "ogr2ogr"
         # sys.executable is the Python.exe file and will likely be in /home/ubuntu//miniconda2/bin/ - the same place as ogr2ogr
-        OGR2OGR_PATH = os.path.dirname(sys.executable) + os.sep
+        # OGR2OGR_PATH = os.path.dirname(sys.executable) + os.sep
+        OGR2OGR_PATH = "/usr/bin/"
         print('OGR2OGR_PATH: ', OGR2OGR_PATH)
         marxan_executable = "MarOpt_v243_Linux64"
         stopCmd = "Press CTRL+C to stop the server\n"
@@ -1060,7 +1061,7 @@ async def _getPlanningUnitGrids():
     Returns:
          dict[]: The planning grids data.
     """
-    return await pg.execute("SELECT feature_class_name ,alias ,description ,to_char(creation_date, 'DD/MM/YY HH24:MI:SS')::text AS creation_date ,country_id ,aoi_id,domain,_area,ST_AsText(envelope) envelope, pu.source, original_n country, created_by,tilesetid, planning_unit_count FROM marxan.metadata_planning_units pu LEFT OUTER JOIN marxan.gaul_2015_simplified_1km ON id_country = country_id order by lower(alias);", returnFormat="Dict")
+    return await pg.execute("SELECT DISTINCT (alias), feature_class_name, description ,to_char(creation_date, 'DD/MM/YY HH24:MI:SS')::text AS creation_date ,country_id ,aoi_id,domain,_area,ST_AsText(envelope) envelope, pu.source, original_n country, created_by,tilesetid, planning_unit_count FROM marxan.metadata_planning_units pu LEFT OUTER JOIN marxan.gaul_2015_simplified_1km ON id_country = country_id order by alias;", returnFormat="Dict")
 
 
 async def _estimatePlanningUnitCount(areakm2, iso3, domain):
@@ -3818,7 +3819,8 @@ class getPlanningUnitGrids(MarxanRESTHandler):
         try:
             planningUnitGrids = await _getPlanningUnitGrids()
             self.send_response(
-                {'info': 'Planning unit grids retrieved', 'planning_unit_grids': planningUnitGrids})
+                {'info': 'Planning unit grids retrieved',
+                 'planning_unit_grids': planningUnitGrids})
         except MarxanServicesError as e:
             _raiseError(self, e.args[0])
 
@@ -7016,12 +7018,13 @@ class updateWDPA(QueryWebSocketHandler):
                     {'status': 'Preprocessing', 'info': "WDPA downloaded"})
                 try:
                     # download finished - upzip the file geodatabase
-                    self.send_response(
-                        {'status': 'Preprocessing', 'info': "Unzipping file geodatabase '" + WDPA_DOWNLOAD_FILENAME + "'"})
+                    self.send_response({
+                        'status': 'Preprocessing',
+                        'info': "Unzipping file geodatabase '" + WDPA_DOWNLOAD_FILENAME + "'"
+                    })
                     files = await IOLoop.current().run_in_executor(None, _unzipFile, IMPORT_FOLDER, WDPA_DOWNLOAD_FILENAME)
                     # check the contents of the unzipped file - the contents should include a folder ending in .gdb - this is the file geodatabase
-                    fileGDBPath = [f for f in files if f[-5:]
-                                   == '.gdb' + os.sep][0]
+                    fileGDBPath = [f for f in files if f[-5:] == '.gdb' + os.sep][0]
                 except IndexError:  # file geodatabase not found
                     self.close(
                         {'error': "The WDPA file geodatabase was not found in the zip file", 'info': 'WDPA not updated'})
