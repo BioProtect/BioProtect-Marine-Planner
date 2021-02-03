@@ -25,63 +25,63 @@ This module defines the following:
 
 """
 
-import psutil
-import urllib
-import tornado.options
-import webbrowser
-import logging
-import fnmatch
-import json
-import psycopg2
-import pandas
-import os
-import re
-import time
-import traceback
-import glob
-import time
+import asyncio
+import ctypes
 import datetime
+import fnmatch
+import glob
+import io
+import json
+import logging
+import os
+import platform
+import re
 import select
+import shlex
+import shutil
+import signal
 import subprocess
 import sys
-import zipfile
-import shutil
+import time
+import traceback
+import urllib
 import uuid
-import signal
-import colorama
-import io
-import requests
-import platform
-import ctypes
-import aiopg
-import asyncio
-import aiohttp
-import monkeypatch
-import numpy
-import shlex
-from psycopg2.extensions import register_adapter, AsIs
-from tornado.websocket import WebSocketClosedError
-from tornado.iostream import StreamClosedError
-from tornado.process import Subprocess
-from tornado.log import LogFormatter
-from tornado.web import HTTPError
-from tornado.web import StaticFileHandler
-from tornado.ioloop import IOLoop, PeriodicCallback
-from tornado.platform.asyncio import AnyThreadEventLoopPolicy
-from tornado import gen, queues, httpclient, concurrent
-from google.cloud import logging as googlelogger
-from datetime import timedelta, timezone
-from colorama import Fore, Back, Style
-from sqlalchemy import create_engine
+import webbrowser
+import xml.etree.ElementTree as ET
+import zipfile
 from collections import OrderedDict
-from subprocess import Popen, PIPE, CalledProcessError
+from datetime import timedelta, timezone
+from subprocess import PIPE, CalledProcessError, Popen
 from threading import Thread
-from urllib.parse import urlparse
 from urllib import request
-from psycopg2 import sql
-from mapbox import Uploader
-from mapbox import errors
+from urllib.parse import urlparse
+
+import aiohttp
+import aiopg
+import colorama
+import numpy
+import pandas
+import psutil
+import psycopg2
+import requests
+import tornado.options
+from colorama import Back, Fore, Style
+from google.cloud import logging as googlelogger
+from mapbox import Uploader, errors
 from osgeo import ogr
+from psycopg2 import sql
+from psycopg2.extensions import AsIs, register_adapter
+from sqlalchemy import create_engine
+from tornado import concurrent, gen, httpclient, queues
+from tornado.ioloop import IOLoop, PeriodicCallback
+from tornado.iostream import StreamClosedError
+from tornado.log import LogFormatter
+from tornado.platform.asyncio import AnyThreadEventLoopPolicy
+from tornado.process import Subprocess
+from tornado.web import HTTPError, StaticFileHandler
+from tornado.websocket import WebSocketClosedError
+
+import monkeypatch
 
 ####################################################################################################################################################################################################################################################################
 # constant declarations
@@ -89,7 +89,7 @@ from osgeo import ogr
 
 # SECURITY SETTINGS
 PERMITTED_METHODS = ["getServerData", "createUser", "validateUser",
-                     "resendPassword", "testTornado", "getProjectsWithGrids"]
+                     "resendPassword", "testTornado", "getProjectsWithGrids", "getAtlasLayers"]
 """REST services that do not need authentication/authorisation."""
 ROLE_UNAUTHORISED_METHODS = {
     "ReadOnly": ["createProject", "createImportProject", "upgradeProject", "deleteProject", "cloneProject", "createProjectGroup", "deleteProjects", "renameProject", "updateProjectParameters", "getCountries", "deletePlanningUnitGrid", "createPlanningUnitGrid", "uploadTilesetToMapBox", "uploadFileToFolder", "uploadFile", "importPlanningUnitGrid", "createFeaturePreprocessingFileFromImport", "createUser", "getUsers", "updateUserParameters", "getFeature", "importFeatures", "getPlanningUnitsData", "updatePUFile", "getSpeciesData", "getSpeciesPreProcessingData", "updateSpecFile", "getProtectedAreaIntersectionsData", "getMarxanLog", "getBestSolution", "getOutputSummary", "getSummedSolution", "getMissingValues", "preprocessFeature", "preprocessPlanningUnits", "preprocessProtectedAreas", "runMarxan", "stopProcess", "testRoleAuthorisation", "deleteFeature", "deleteUser", "getRunLogs", "clearRunLogs", "updateWDPA", "unzipShapefile", "getShapefileFieldnames", "createFeatureFromLinestring", "runGapAnalysis", "toggleEnableGuestUser", "importGBIFData", "deleteGapAnalysis", "shutdown", "addParameter", "block", "resetDatabase", "cleanup", "exportProject", "importProject", 'getCosts', 'updateCosts', 'deleteCost', 'runSQLFile', 'exportPlanningUnitGrid', 'exportFeature'],
@@ -2866,19 +2866,24 @@ def _importDataFrame(df, table_name):
     Returns:
         None  
     """
-    engine_text = 'postgresql://' + DATABASE_USER + ':' + \
-        DATABASE_PASSWORD + '@' + DATABASE_HOST + '/' + DATABASE_NAME
-    engine = create_engine(engine_text)
-    conn = engine.raw_connection()
-    cur = conn.cursor()
-    output = io.StringIO()
-    df.to_csv(output, sep='\t', header=False, index=False)
-    output.seek(0)
-    contents = output.getvalue()
-    cur.copy_from(output, 'marxan.' + table_name,
-                  null="")  # null values become ''
-    conn.commit()
-    conn.close()
+    # engine_text = 'postgresql://' + DATABASE_USER + ':' + \
+    #     DATABASE_PASSWORD + '@' + DATABASE_HOST + '/' + DATABASE_NAME
+    # engine = create_engine(engine_text)
+    # conn = engine.raw_connection()
+    # cur = conn.cursor()
+    # output = io.StringIO()
+    # df.to_csv(output, sep='\t', header=False, index=False)
+    # output.seek(0)
+    # contents = output.getvalue()
+    # cur.copy_from(output, 'marxan.' + table_name,
+    #               null="")  # null values become ''
+    # conn.commit()
+    # conn.close()
+    engine = create_engine('postgresql://' +
+                           DATABASE_USER + ':' +
+                           DATABASE_PASSWORD + '@' +
+                           DATABASE_HOST + '/' + DATABASE_NAME)
+    df.to_sql('marxan.' + table_name, con=engine, if_exists='replace')
 
 
 def _getExceptionLastLine(exc_info):
@@ -7024,7 +7029,8 @@ class updateWDPA(QueryWebSocketHandler):
                     })
                     files = await IOLoop.current().run_in_executor(None, _unzipFile, IMPORT_FOLDER, WDPA_DOWNLOAD_FILENAME)
                     # check the contents of the unzipped file - the contents should include a folder ending in .gdb - this is the file geodatabase
-                    fileGDBPath = [f for f in files if f[-5:] == '.gdb' + os.sep][0]
+                    fileGDBPath = [f for f in files if f[-5:]
+                                   == '.gdb' + os.sep][0]
                 except IndexError:  # file geodatabase not found
                     self.close(
                         {'error': "The WDPA file geodatabase was not found in the zip file", 'info': 'WDPA not updated'})
@@ -7154,6 +7160,98 @@ class updateWDPA(QueryWebSocketHandler):
         finally:
             await session.close()
 
+# ****
+#  *********
+#  *****************
+#  ***********************
+#  ***********************************
+#  *******************************************
+#  ******************************************************
+#  ************************************************************************
+#  *********************************************************************************
+#  ***************************************************************************************************
+# * tornado functions
+#  ***************************************************************************************************
+#  *********************************************************************************
+#  ******************************************************
+#  ***********************************
+
+
+def getPressuresActivitiesDatabase(padfile_path):
+    engine = create_engine('postgresql+psycopg2://' +
+                           DATABASE_USER + ':' +
+                           DATABASE_PASSWORD+'@' +
+                           DATABASE_HOST +
+                           ':' + DATABSE_PORT + '/' +
+                           DATABASE_NAME)
+
+    pad = pandas.read_sql('select * from marxan.pad', con=engine)
+    if pad is None:
+        pad = pandas.read_csv(padfile_path)
+        pad.columns = pad.columns.str.lower()
+        pad["rppscore"] = numpy.where(
+            pad['rpptitle'] == 'low', 0.3, 1)
+        pad.to_sql('marxan.pad', con=engine, if_exists='replace')
+    return pad
+
+
+class GetAtlasLayersHandler(MarxanRESTHandler):
+    """
+    Get the atlas layers from the atlas GMS and allow them to be added to the map
+
+    Args:
+        RequestHandler (RequestHandler): Tornado handler class for handling requests
+    """
+
+    def get(self):
+        user = 'cartig'
+        password = 'x88F#haYZ8E3h&'
+        # try getting the details from the server and if theres an issue fall back to local file version
+        # local file version is from Friday 28th Feb 2020
+        try:
+            r = requests.get('http://www.atlas-horizon2020.eu/gs/wms?request=getCapabilities',
+                             auth=(user, password))
+            try:
+                root = ET.fromstring(r.text)
+            except ET.ParseError:
+                root = ET.parse('../data/layers.json')
+        except ConnectionError as error:
+            root = ET.parse('../data/layers.json')
+
+        layers = []
+        for layer in root.iter('{http://www.opengis.net/wms}Layer'):
+            try:
+                layer_link = layer.find(
+                    '{http://www.opengis.net/wms}Name').text  # .encode('utf8')
+                title_name = layer.find(
+                    '{http://www.opengis.net/wms}Title').text  # .encode('utf8')
+                layers.append(json.dumps({
+                    'title': title_name,
+                    'layer': layer_link
+                }))
+            except AttributeError:
+                continue
+
+        self.finish(json.dumps(layers))
+
+
+class GetActivitiesHandler(MarxanRESTHandler):
+    async def get(self):
+        pad = getPressuresActivitiesDatabase('data/MasterPAD_20181015.csv')
+        try:
+            activities = []
+            activitytitles = pad.activitytitle.unique()
+
+            for idx, act in enumerate(activitytitles):
+                activities.append({
+                    "category": pad[pad.activitytitle == act].categorytitle.unique()[0],
+                    "activity": act
+                })
+            self.send_response({"data": json.dumps(activities)})
+        except Exception as e:
+            print(self, e.args[0])
+
+
 ####################################################################################################################################################################################################################################################################
 # tornado functions
 ####################################################################################################################################################################################################################################################################
@@ -7263,12 +7361,17 @@ class Application(tornado.web.Application):
             ("/marxan-server/shutdown", shutdown),
             ("/marxan-server/block", block),
             ("/marxan-server/testTornado", testTornado),
+            ("/marxan-server/getAtlasLayers", GetAtlasLayersHandler),
+            ("/marxan-server/getActivities", GetActivitiesHandler),
             ("/marxan-server/exports/(.*)",
              StaticFileHandler, dict(path=EXPORT_FOLDER)),
             # default handler if the REST services is cannot be found on this server - maybe a newer client is requesting a method on an old server
             ("/marxan-server/(.*)", methodNotFound),
             # assuming the marxan-client is installed in the same folder as the marxan-server all files will go to the client build folder
-            (r"/(.*)", StaticFileHandler, {"path": MARXAN_CLIENT_BUILD_FOLDER})
+            (r"/(.*)", StaticFileHandler,
+             {"path": MARXAN_CLIENT_BUILD_FOLDER}),
+
+
         ]
         settings = dict(
             cookie_secret=COOKIE_RANDOM_VALUE,
