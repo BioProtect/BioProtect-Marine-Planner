@@ -63,6 +63,7 @@ import numpy
 import pandas
 import psutil
 import psycopg2
+import rasterio
 import requests
 import tornado.options
 from colorama import Back, Fore, Style
@@ -71,7 +72,8 @@ from mapbox import Uploader, errors
 from osgeo import ogr
 from psycopg2 import sql
 from psycopg2.extensions import AsIs, register_adapter
-from sqlalchemy import create_engine
+from rasterio.io import MemoryFile
+from sqlalchemy import create_engine, exc
 from tornado import concurrent, gen, httpclient, queues
 from tornado.ioloop import IOLoop, PeriodicCallback
 from tornado.iostream import StreamClosedError
@@ -82,6 +84,22 @@ from tornado.web import HTTPError, StaticFileHandler
 from tornado.websocket import WebSocketClosedError
 
 import monkeypatch
+from functions.utils import (
+    get_tif_list,
+    replace_chars,
+    reproject_and_normalise_upload,
+    config,
+    wgs84,
+    JOSE_CRS,
+    WGS84_SHP,
+    engine,
+    psql_str,
+    uploadRasterToMapbox,
+    cumul_impact,
+    reproject_raster_to_all_habs,
+    project_raster,
+    reproject_raster
+)
 
 ####################################################################################################################################################################################################################################################################
 # constant declarations
@@ -324,6 +342,7 @@ async def _setGlobalVariables():
     # if the ogr2ogr executable path is not in the miniconda bin directory, then hard-code it here and uncomment the line
     #OGR2OGR_PATH = ""
     OGR2OGR_EXECUTABLE = OGR2OGR_PATH + ogr2ogr_executable
+    print('OGR2OGR_EXECUTABLE: ', OGR2OGR_EXECUTABLE)
     # if not os.path.exists(OGR2OGR_EXECUTABLE):
     #     raise MarxanServicesError(" ogr2ogr executable:\t'" + OGR2OGR_EXECUTABLE +
     #                               "' could not be found. Set it manually in the marxan-server.py file.")
@@ -7178,20 +7197,16 @@ class updateWDPA(QueryWebSocketHandler):
 
 
 def getPressuresActivitiesDatabase(padfile_path):
-    engine = create_engine('postgresql+psycopg2://' +
-                           DATABASE_USER + ':' +
-                           DATABASE_PASSWORD+'@' +
-                           DATABASE_HOST +
-                           ':' + DATABSE_PORT + '/' +
-                           DATABASE_NAME)
-
-    pad = pandas.read_sql('select * from marxan.pad', con=engine)
-    if pad is None:
+    try:
+        pad = pandas.read_sql('select * from marxan.pad', con=engine)
+    except exc.ProgrammingError as err:
+        print(err)
+    finally:
         pad = pandas.read_csv(padfile_path)
         pad.columns = pad.columns.str.lower()
         pad["rppscore"] = numpy.where(
             pad['rpptitle'] == 'low', 0.3, 1)
-        pad.to_sql('marxan.pad', con=engine, if_exists='replace')
+        pad.to_sql('pad', con=engine, schema='marxan', if_exists='replace')
     return pad
 
 
@@ -7237,7 +7252,7 @@ class GetAtlasLayersHandler(MarxanRESTHandler):
 
 class GetActivitiesHandler(MarxanRESTHandler):
     async def get(self):
-        pad = getPressuresActivitiesDatabase('data/MasterPAD_20181015.csv')
+        pad = getPressuresActivitiesDatabase(config['pad'])
         try:
             activities = []
             activitytitles = pad.activitytitle.unique()
@@ -7252,7 +7267,206 @@ class GetActivitiesHandler(MarxanRESTHandler):
             print(self, e.args[0])
 
 
-####################################################################################################################################################################################################################################################################
+async def _getAllImpacts(obj):
+    """Gets all feature information from the PostGIS database. These are set on the passed obj in the allImpacts attribute.
+
+    Args:
+        obj (MarxanRESTHandler): The request handler instance.
+    Returns:
+        None
+    """
+    print('getting all impacts.......')
+    obj.allImpacts = await pg.execute("SELECT feature_class_name, alias, description, extent, to_char(creation_date, 'DD/MM/YY HH24:MI:SS')::text AS creation_date, tilesetid, source, created_by FROM marxan.metadata_impacts ORDER BY lower(alias);", returnFormat="DataFrame")
+
+
+class GetAllImpactsHandler(MarxanRESTHandler):
+    """REST HTTP handler. Gets all species information from the PostGIS database. The required arguments in the request.arguments parameter are:
+
+    Args:
+        None
+    Returns:
+        A dict with the following structure (if the class raises an exception, the error message is included in an 'error' key/value pair):
+
+        {
+        "info": Informational message,
+        "data": dict[]: A list of the features. Each dict contains the keys: id,feature_class_name,alias,description,area,extent,creation_date,tilesetid,source,created_by
+        }
+    """
+    async def get(self):
+        print('Get all impacts handerler.....')
+        try:
+            # get all the species data
+            await _getAllImpacts(self)
+            # set the response
+            self.send_response({"info": "All impact data received",
+                                "data": self.allImpacts.to_dict(orient="records")})
+        except Exception as e:
+            print(self, e.args[0])
+
+
+class UploadRasterHandler(MarxanRESTHandler):
+    async def post(self):
+        activity = self.get_argument('activity')
+        print('activity: ', activity)
+        filename = self.get_argument('filename')
+        print('filename: ', filename)
+        uploaded_rast = self.request.files['value'][0].body
+
+        with engine.begin() as connection:
+            pad_data = connection.execute(
+                f"""select activitytitle, pressuretitle, rppscore from marxan.pad WHERE pad.activitytitle = '{activity}';""").fetchall()
+        print('pad_data: ', pad_data)
+
+        with MemoryFile(uploaded_rast) as memfile:
+            ds = memfile.open()
+            uploaded = reproject_and_normalise_upload(
+                raster_name=filename,
+                data=ds,
+                reprojection_crs=config["jose_crs_str"],
+                wgs84=config["wgs84_str"],
+                crop_file=config['out_casestud']
+            )
+
+        with rasterio.open(uploaded, 'r+') as src:
+            meta = src.meta
+            band = numpy.ma.masked_values(src.read(1, masked=True), 0)
+            for pressure in pad_data:
+                new_band = band.copy()
+                update_band = new_band*pressure[2]
+                title = 'data/pressures/' + replace_chars(pressure[1]) + '.tif'
+                with rasterio.open(title, 'w', **meta) as dst:
+                    dst.write(update_band, 1)
+
+        self.send_response({
+            'info': "File '" + filename + "' uploaded and pressures created",
+            'file': filename
+        })
+
+
+def setup_sens_matrix():
+    print('Setting up sensitivity matrix....')
+    habitat_list = [item['label']
+                    for item in
+                    get_tif_list('/'+config['input_coral'], 'asc') +
+                    get_tif_list('/'+config['input_fish'], 'asc')]
+    sens_mat = config['sensmat']
+    for habitat_name in habitat_list:
+        sens_mat.loc[habitat_name] = sens_mat.loc['VME']
+    return sens_mat
+
+
+async def _finishImportingRaster(feature_class_name, activity, description, user):
+    """Finishes creating a feature by adding a spatial index and a record in the metadata_interest_features table.
+
+    Args:
+        feature_class_name (string): The feature class to finish creating.
+       activity (string): Theactivity of the feature class that will be used as an alias in the metadata_interest_features table.
+        source (string): The source for the feature.
+        user (string): The user who created the feature.
+    Returns:
+        int: The id of the feature created.
+    Raises:
+        MarxanServicesError: If the feature already exists.
+    """
+    print('finishing importing raster...')
+    # get the Mapbox tilesetId
+    id = None
+    tilesetId = config['mbuser'] + "." + feature_class_name
+    try:
+        # create a record for this new feature in the metadata_interest_features table
+        print("creating record for feature in db")
+        id = await pg.execute(
+            sql.SQL("INSERT INTO marxan.metadata_impacts (feature_class_name, alias, description, creation_date, tilesetid, extent, source, created_by) SELECT %s, %s, %s, now(), %s, rast.extent, %s, %s FROM (SELECT Box2D(ST_Envelope(rast)) extent FROM ( SELECT rid, rast FROM marxan.{}) as rast2 ) as rast RETURNING tableoid")
+            .format(sql.Identifier(feature_class_name)),
+            data=[feature_class_name, activity, description,
+                  tilesetId, "raster", "cartig"],
+            returnFormat="Array")
+        return id
+    except (Exception) as e:
+        print('Unable to create record in db e: ', e)
+    finally:
+        if id is not None:
+            return id[0]
+        return
+
+
+class CumulativeImpactHandler(MarxanWebSocketHandler):
+    async def open(self):
+        try:
+            await super().open({'info': "Running Cumulative Impact Function..."})
+        except MarxanServicesError as e:  # authentication/authorisation error
+            print('MarxanServicesError as e: ', e)
+            pass
+        else:
+            # validate the input arguments
+            _validateArguments(self.request.arguments, ['activity'])
+
+            id = None
+            nodata_val = 0
+            connect_str = psql_str()
+            activity = self.get_argument('activity')
+            print('activity: ', activity)
+            feature_class_name = _getUniqueFeatureclassName("impact_")
+            print('feature_class_name: ', feature_class_name)
+            self.send_response({'info': "Building sensitivity matrix..."})
+            stressors_list = get_tif_list('/data/pressures', 'tif')
+            print('stressors_list: ', stressors_list)
+            ecosys_list = get_tif_list('/data/rasters/ecosystem', 'tif')
+            sens_mat = setup_sens_matrix()
+
+            self.send_response(
+                {'info': "Running Cumulative Impact Function..."})
+            impact, meta = cumul_impact(
+                ecosys_list, sens_mat, stressors_list, nodata_val)
+            # set all zeroes to nodata val
+            # impact = np.where(impact == 0, nodata_val, impact)
+
+            self.send_response({'info': "Reprojecting rasters..."})
+            reproject_raster_to_all_habs(tmp_file='./data/tmp/impact2.tif',
+                                         data=impact,
+                                         meta=meta,
+                                         out_file='./data/tmp/impact.tif')
+            impact_file = 'data/uploaded_rasters/impact.tif'
+            cropped_impact = 'data/uploaded_rasters/'+feature_class_name+'.tif'
+            project_raster(rast1='data/tmp/impact.tif',
+                           template_file='data/rasters/all_habitats.tif',
+                           output_file=impact_file)
+
+            wgs84_rast = reproject_raster(file=impact_file,
+                                          output_folder='data/tmp/',
+                                          reprojection_crs=config["wgs84_str"])
+
+        try:
+            self.send_response(
+                {'info': 'Saving cumulative impact raster to database...'})
+            cmds = "raster2pgsql -s 4326 -c -I -C -F " + wgs84_rast + \
+                " marxan." + feature_class_name + connect_str
+            subprocess.call(cmds, shell=True)
+        except TypeError as e:
+            self.send_response(
+                {'error': 'Unable to save Cumulative Impact raster to database...'})
+            print("Pass in the location of the file as a string, not anything else....")
+
+        try:
+            self.send_response(
+                {'info': 'Saving to meta data table and uploading to mapbox...'})
+            id = await _finishImportingRaster(feature_class_name,
+                                              activity.replace(
+                                                  ' ', '_').lower(),
+                                              self.get_argument('description'),
+                                              self.get_current_user())
+            print('id: ', id)
+            # start the upload to mapbox
+            uploadId = uploadRasterToMapbox(wgs84_rast, feature_class_name)
+            print('uploadId: ', uploadId)
+            self.send_response({'info': "Raster '" + activity + "' created",
+                                'feature_class_name': feature_class_name,
+                                'uploadId': uploadId})
+        except Exception as e:
+            print("Exception")
+            print(self, e.args[0])
+
+
 # tornado functions
 ####################################################################################################################################################################################################################################################################
 
@@ -7363,6 +7577,9 @@ class Application(tornado.web.Application):
             ("/marxan-server/testTornado", testTornado),
             ("/marxan-server/getAtlasLayers", GetAtlasLayersHandler),
             ("/marxan-server/getActivities", GetActivitiesHandler),
+            ("/marxan-server/getAllImpacts", GetAllImpactsHandler),
+            ("/marxan-server/uploadRaster", UploadRasterHandler),
+            ("/marxan-server/runCumumlativeImpact", CumulativeImpactHandler),
             ("/marxan-server/exports/(.*)",
              StaticFileHandler, dict(path=EXPORT_FOLDER)),
             # default handler if the REST services is cannot be found on this server - maybe a newer client is requesting a method on an old server
