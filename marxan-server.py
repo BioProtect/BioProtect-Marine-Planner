@@ -8,20 +8,20 @@
 # License: European Union Public Licence V. 1.2, see https://opensource.org/licenses/EUPL-1.2
 #
 
-"""Core module for handling all marxan-server REST API requests. 
+"""Core module for handling all marxan-server REST API requests.
 
-This module is run with the Tornado Web Server to handle requests to the Marxan 
-software and to return JSON data for those requests. 
+This module is run with the Tornado Web Server to handle requests to the Marxan
+software and to return JSON data for those requests.
 
-This module defines the following:  
+This module defines the following:
 
- - Global variables (constants) that are used in the module.  
- - Private module functions (prefixed with an underscore) that are the internal 
- implementation.  
- - Request handler classes. HTTPRequest handlers 
- (MarxanRESTHandler descendents) and WebSocket handlers for long-running processes 
- (MarxanWebSocketHandler descendents).   
- - Utiliy classes, e.g. for interacting with PostGIS.  
+ - Global variables (constants) that are used in the module.
+ - Private module functions (prefixed with an underscore) that are the internal
+ implementation.
+ - Request handler classes. HTTPRequest handlers
+ (MarxanRESTHandler descendents) and WebSocket handlers for long-running processes
+ (MarxanWebSocketHandler descendents).
+ - Utiliy classes, e.g. for interacting with PostGIS.
 
 """
 
@@ -206,9 +206,9 @@ async def _setGlobalVariables():
     """Run when the server starts to read the server configuration from the server.dat file and set all of the global path variables
 
     Args:
-        None  
+        None
     Returns:
-        None  
+        None
     """
     global MBAT
     global MARXAN_FOLDER
@@ -275,6 +275,7 @@ async def _setGlobalVariables():
     await pg.initialise()
     # get the database version
     results = await pg.execute("SELECT version(), PostGIS_Version();", returnFormat="Array")
+    print('results: ', results)
     DATABASE_VERSION_POSTGRESQL, DATABASE_VERSION_POSTGIS = results[0]
     COOKIE_RANDOM_VALUE = _getDictValue(serverData, 'COOKIE_RANDOM_VALUE')
     PERMITTED_DOMAINS = _getDictValue(
@@ -340,7 +341,7 @@ async def _setGlobalVariables():
         marxan_executable = "MarOpt_v243_Linux64"
         stopCmd = "Press CTRL+C to stop the server\n"
     # if the ogr2ogr executable path is not in the miniconda bin directory, then hard-code it here and uncomment the line
-    #OGR2OGR_PATH = ""
+    # OGR2OGR_PATH = ""
     OGR2OGR_EXECUTABLE = OGR2OGR_PATH + ogr2ogr_executable
     print('OGR2OGR_EXECUTABLE: ', OGR2OGR_EXECUTABLE)
     # if not os.path.exists(OGR2OGR_EXECUTABLE):
@@ -350,14 +351,22 @@ async def _setGlobalVariables():
     log(_padDict("ogr2ogr executable:", OGR2OGR_EXECUTABLE, DICT_PAD))
     # set the various folder paths
     MARXAN_USERS_FOLDER = MARXAN_FOLDER + "users" + os.sep
+    print('MARXAN_USERS_FOLDER: ', MARXAN_USERS_FOLDER)
     CLUMP_FOLDER = MARXAN_USERS_FOLDER + "_clumping" + os.sep
+    print('CLUMP_FOLDER: ', CLUMP_FOLDER)
     EXPORT_FOLDER = MARXAN_FOLDER + "exports" + os.sep
+    print('EXPORT_FOLDER: ', EXPORT_FOLDER)
     IMPORT_FOLDER = MARXAN_FOLDER + "imports" + os.sep
+    print('IMPORT_FOLDER: ', IMPORT_FOLDER)
     MARXAN_EXECUTABLE = MARXAN_FOLDER + marxan_executable
+    print('MARXAN_EXECUTABLE: ', MARXAN_EXECUTABLE)
     MARXAN_WEB_RESOURCES_FOLDER = MARXAN_FOLDER + "_marxan_web_resources" + os.sep
+    print('MARXAN_WEB_RESOURCES_FOLDER: ', MARXAN_WEB_RESOURCES_FOLDER)
     CASE_STUDIES_FOLDER = MARXAN_WEB_RESOURCES_FOLDER + "case_studies" + os.sep
+    print('CASE_STUDIES_FOLDER: ', CASE_STUDIES_FOLDER)
     EMPTY_PROJECT_TEMPLATE_FOLDER = MARXAN_WEB_RESOURCES_FOLDER + "empty_project" + os.sep
-    log(_padDict("GDAL_DATA path:", GDAL_DATA_ENVIRONMENT_VARIABLE, DICT_PAD))
+    print('EMPTY_PROJECT_TEMPLATE_FOLDER: ', EMPTY_PROJECT_TEMPLATE_FOLDER)
+    # log(_padDict("GDAL_DATA path:", GDAL_DATA_ENVIRONMENT_VARIABLE, DICT_PAD))
     log(_padDict("Marxan executable:", MARXAN_EXECUTABLE, DICT_PAD))
     log("\nTo test marxan-server goto " + testUrl, Fore.GREEN)
     log(stopCmd, Fore.RED)
@@ -365,15 +374,19 @@ async def _setGlobalVariables():
     PARENT_FOLDER = MARXAN_FOLDER[:MARXAN_FOLDER[:-1].rindex(os.sep)] + os.sep
     # OUTPUT THE INFORMATION ABOUT THE MARXAN-CLIENT SOFTWARE IF PRESENT
     packageJson = PARENT_FOLDER + "marxan-client" + os.sep + "package.json"
+    print('packageJson: ', packageJson)
     if os.path.exists(packageJson):
         MARXAN_CLIENT_BUILD_FOLDER = PARENT_FOLDER + "marxan-client" + os.sep + "build"
         # open the node.js package.json file for the marxan-client app to read the version of the software
         f = open(packageJson)
+        print('f: ', f)
         MARXAN_CLIENT_VERSION = json.load(f)['version']
+        print('MARXAN_CLIENT_VERSION: ', MARXAN_CLIENT_VERSION)
         f.close()
         log("marxan-client " + MARXAN_CLIENT_VERSION + " installed", Fore.GREEN)
     else:
         MARXAN_CLIENT_BUILD_FOLDER = ""
+        print('MARXAN_CLIENT_BUILD_FOLDER: ', MARXAN_CLIENT_BUILD_FOLDER)
         MARXAN_CLIENT_VERSION = "Not installed"
         log("marxan-client is not installed\n", Fore.GREEN)
 
@@ -382,9 +395,9 @@ def _padDict(k, v, w):
     """outputs a key: value from a dictionary into 2 columns with width w
 
     Args:
-        k (string): The dictionary key  
-        v (string): The dictionary value  
-        k (int):    The width of the key column - the key value will be padded to this width  
+        k (string): The dictionary key
+        v (string): The dictionary value
+        k (int):    The width of the key column - the key value will be padded to this width
     Returns:
         string: The padded dictionary as a string
     """
@@ -395,10 +408,10 @@ def log(_str, _color=Fore.RESET):
     """Logs the string to the logging handlers using the passed colorama color
 
     Args:
-        _str (string): The string to log  
-        _color (int): The color to use. The default is Fore.RESET.  
+        _str (string): The string to log
+        _color (int): The color to use. The default is Fore.RESET.
     Returns:
-        None  
+        None
     """
     if SHOW_START_LOG:
         # print to the console
@@ -414,10 +427,10 @@ def _raiseError(obj, msg):
     """Generic function to send an error response and close the connection. Used in all MarxanRESTHandler descendent classes.
 
     Args:
-        obj (MarxanRESTHandler): The request handler instance  
-        msg (string): The error message to send  
+        obj (MarxanRESTHandler): The request handler instance
+        msg (string): The error message to send
     Returns:
-        None  
+        None
     """
     # send a response with the error message
     if hasattr(obj, "send_response"):
@@ -446,15 +459,15 @@ def _createUser(obj, user, fullname, email, password):
     """Creates a new user in the file system and stores the users metadata in the user.dat file.
 
     Args:
-        obj (MarxanRESTHandler): The request handler instance  
-        user (string): The user to create. This will be the name of the folder created in the MARXAN_USERS_FOLDER folder  
-        fullname (string): The fullname of the user  
-        email (string): The email address of the user  
-        password (string): The password of the user. CAUTION: This is stored in plain text in the user.dat file.  
+        obj (MarxanRESTHandler): The request handler instance
+        user (string): The user to create. This will be the name of the folder created in the MARXAN_USERS_FOLDER folder
+        fullname (string): The fullname of the user
+        email (string): The email address of the user
+        password (string): The password of the user. CAUTION: This is stored in plain text in the user.dat file.
     Returns:
-        None  
+        None
     Raises:
-        MarxanServicesError: If the user already exists.  
+        MarxanServicesError: If the user already exists.
     """
     # get the list of users
     users = _getUsers()
@@ -478,7 +491,7 @@ def _getUsers():
     """Gets a list of all registered users.
 
     Args:
-        None  
+        None
     Returns:
         string[]: List of all registered users
     """
@@ -542,10 +555,10 @@ def _dismissNotification(obj, notificationid):
     """Appends the notificationid in the users NOTIFICATIONS_FILENAME to dismiss the notification.
 
     Args:
-        obj (MarxanRESTHandler): The request handler instance.  
-        notificationid (int): The notification id  
+        obj (MarxanRESTHandler): The request handler instance.
+        notificationid (int): The notification id
     Returns:
-        None  
+        None
     """
     # get the data from the notifications file
     ids = _getNotificationsData(obj)
@@ -559,7 +572,7 @@ def _resetNotifications(obj):
     Args:
         obj (MarxanRESTHandler): The request handler instance.
     Returns:
-        None  
+        None
     """
     _writeFileUnicode(obj.folder_user + NOTIFICATIONS_FILENAME, "")
 
@@ -607,10 +620,10 @@ async def _getProjectsForUser(user):
 
 
 async def _getAllProjects():
-    """Gets data for all projects. 
+    """Gets data for all projects.
 
     Args:
-        None  
+        None
     Returns:
          dict[]: A list of dict containing each of the projects data. See ``_getProjectData``.
     """
@@ -642,12 +655,12 @@ def _createProject(obj, name):
     """Creates a new empty project with the passed parameters.
 
     Args:
-        obj (MarxanRESTHandler): The request handler instance.  
-        name (string): The name of the project to create.  
+        obj (MarxanRESTHandler): The request handler instance.
+        name (string): The name of the project to create.
     Returns:
-        None  
+        None
     Raises:
-        MarxanServicesError: If the project already exists.  
+        MarxanServicesError: If the project already exists.
     """
     # make sure the project does not already exist
     if os.path.exists(obj.folder_user + name):
@@ -665,7 +678,7 @@ def _deleteProject(obj):
     Args:
         obj (MarxanRESTHandler): The request handler instance.
     Returns:
-        None  
+        None
     """
     # delete the folder and all of its contents
     try:
@@ -675,11 +688,11 @@ def _deleteProject(obj):
 
 
 def _cloneProject(source_folder, destination_folder):
-    """Clones a project from the source_folder to the destination_folder 
+    """Clones a project from the source_folder to the destination_folder
 
     Args:
-        source_folder (string): Full folder path to the source folder.  
-        destination_folder (string): Full folder path to the destination folder.  
+        source_folder (string): Full folder path to the source folder.
+        destination_folder (string): Full folder path to the destination folder.
     Returns:
         string: The name of the cloned project
     """
@@ -703,10 +716,11 @@ def _setFolderPaths(obj, arguments):
     """Sets the various paths to the users folder and project folders using the request arguments in the passed object.
 
     Args:
-        obj (MarxanRESTHandler): The request handler instance.  
-        arguments (dict): See https://www.tornadoweb.org/en/stable/httputil.html#tornado.httputil.HTTPServerRequest.arguments  
+        obj (MarxanRESTHandler): The request handler instance.
+        #tornado.httputil.HTTPServerRequest.arguments
+        arguments (dict): See https://www.tornadoweb.org/en/stable/httputil.html
     Returns:
-        None  
+        None
     """
     if "user" in list(arguments.keys()):
         # argument values are bytes
@@ -728,7 +742,7 @@ async def _getProjectData(obj):
     Args:
         obj (MarxanRESTHandler): The request handler instance.
     Returns:
-        None  
+        None
     """
     paramsArray = []
     filesDict = {}
@@ -773,11 +787,11 @@ async def _getProjectData(obj):
 
 
 async def _getProjectInputFilename(obj, fileToGet):
-    """Gets the filename of the Marxan input file from the projects input.dat file. 
+    """Gets the filename of the Marxan input file from the projects input.dat file.
 
     Args:
-        obj (MarxanRESTHandler): The request handler instance.  
-        fileToGet (string): The name of the input file as specified in the Input Files section of the input.dat file, e.g. one of INPUTDIR, PUNAME, SPECNAME, PUVSPRNAME or BOUNDNAME.  
+        obj (MarxanRESTHandler): The request handler instance.
+        fileToGet (string): The name of the input file as specified in the Input Files section of the input.dat file, e.g. one of INPUTDIR, PUNAME, SPECNAME, PUVSPRNAME or BOUNDNAME.
     Returns:
         The filename to the input file.
     """
@@ -790,9 +804,9 @@ async def _getProjectInputData(obj, fileToGet, errorIfNotExists=False):
     """Gets the projects input data using the fileToGet, e.g. SPECNAME will return the data from the file corresponding to the input.dat file SPECNAME setting.
 
     Args:
-        obj (MarxanRESTHandler): The request handler instance.  
-        fileToGet (string): The name of the input file as specified in the Input Files section of the input.dat file, e.g. one of INPUTDIR, PUNAME, SPECNAME, PUVSPRNAME or BOUNDNAME.  
-        errorIfNotExists (bool): Optional. If True, raises and exception if the file does not exist. Defaults to False.  
+        obj (MarxanRESTHandler): The request handler instance.
+        fileToGet (string): The name of the input file as specified in the Input Files section of the input.dat file, e.g. one of INPUTDIR, PUNAME, SPECNAME, PUVSPRNAME or BOUNDNAME.
+        errorIfNotExists (bool): Optional. If True, raises and exception if the file does not exist. Defaults to False.
     Returns:
         dict: The data from the input file.
     """
@@ -801,14 +815,14 @@ async def _getProjectInputData(obj, fileToGet, errorIfNotExists=False):
 
 
 def _getKeyValuesFromFile(filename):
-    """Gets the key/value pairs from a text file as a dictionary. 
+    """Gets the key/value pairs from a text file as a dictionary.
 
     Args:
         filename (string): Full path to the file that will be read.
     Returns:
         dict: The key/value pairs as a dict.
     Raises:
-        MarxanServicesError: If the file does not exist. 
+        MarxanServicesError: If the file does not exist.
     """
     if not os.path.exists(filename):
         raise MarxanServicesError("The file '" + filename + "' does not exist")
@@ -833,7 +847,7 @@ def _get_free_space_mb():
     """Gets the drive free space in gigabytes.
 
     Args:
-        None  
+        None
     Returns:
         string: The free space in Gb, e.g. 1.2 Gb
     """
@@ -854,7 +868,7 @@ def _getServerData(obj):
     Args:
         obj (MarxanRESTHandler): The request handler instance.
     Returns:
-        None  
+        None
     """
 
     # get the data from the server configuration file
@@ -876,10 +890,10 @@ def _getUserData(obj, returnPassword=False):
     """Gets the data on the user from the user.dat file. These are set on the passed obj in the userData attribute.
 
     Args:
-        obj (MarxanRESTHandler): The request handler instance.  
-        returnPassword (bool): Optional. Set to True to return the users password. Default value is False.  
+        obj (MarxanRESTHandler): The request handler instance.
+        returnPassword (bool): Optional. Set to True to return the users password. Default value is False.
     Returns:
-        None  
+        None
     """
     data = _getKeyValuesFromFile(obj.folder_user + USER_DATA_FILENAME)
     # set the userData attribute on this object
@@ -895,7 +909,7 @@ async def _getSpeciesData(obj):
     Args:
         obj (MarxanRESTHandler): The request handler instance.
     Returns:
-        None  
+        None
     """
     # get the values from the spec.dat file - speciesDataFilename will be empty if it doesn't exist yet
     df = await _getProjectInputData(obj, "SPECNAME")
@@ -942,10 +956,10 @@ async def _getFeature(obj, oid):
     """Gets data for a single feature from PostGIS in a Marxan Web project (this does not apply to imported projects as they have no data in PostGIS). These are set on the passed obj in the data attribute.
 
     Args:
-        obj (MarxanRESTHandler): The request handler instance.  
-        oid (string): The feature oid in PostGIS.  
+        obj (MarxanRESTHandler): The request handler instance.
+        oid (string): The feature oid in PostGIS.
     Returns:
-        None  
+        None
     """
     obj.data = await pg.execute("SELECT oid::integer id,feature_class_name,alias,description,_area area,extent, to_char(creation_date, 'DD/MM/YY HH24:MI:SS')::text AS creation_date, tilesetid, source, created_by FROM marxan.metadata_interest_features WHERE oid=%s;", data=[oid], returnFormat="DataFrame")
 
@@ -956,7 +970,7 @@ async def _getAllSpeciesData(obj):
     Args:
         obj (MarxanRESTHandler): The request handler instance.
     Returns:
-        None  
+        None
     """
     obj.allSpeciesData = await pg.execute("SELECT oid::integer id,feature_class_name , alias , description , _area area, extent, to_char(creation_date, 'DD/MM/YY HH24:MI:SS')::text AS creation_date, tilesetid, source, created_by FROM marxan.metadata_interest_features ORDER BY lower(alias);", returnFormat="DataFrame")
 
@@ -969,7 +983,7 @@ def _getSpeciesPreProcessingData(obj):
     Args:
         obj (MarxanRESTHandler): The request handler instance.
     Returns:
-        None  
+        None
     """
     obj.speciesPreProcessingData = _loadCSV(
         obj.folder_input + FEATURE_PREPROCESSING_FILENAME)
@@ -981,7 +995,7 @@ async def _getPlanningUnitsData(obj):
     Args:
         obj (MarxanRESTHandler): The request handler instance.
     Returns:
-        None  
+        None
     """
     df = await _getProjectInputData(obj, "PUNAME")
     # normalise the planning unit data to make the payload smaller
@@ -1007,7 +1021,7 @@ def _getCosts(obj):
     Args:
         obj (MarxanRESTHandler): The request handler instance.
     Returns:
-        None  
+        None
     """
     # get all files that end in .cost
     costFiles = glob.glob(obj.folder_input + "*.cost")
@@ -1021,15 +1035,15 @@ def _getCosts(obj):
 
 
 async def _updateCosts(obj, costname):
-    """Updates the costs in the Marxan PUNAME file using the costname file and saves the setting in the input.dat file. 
+    """Updates the costs in the Marxan PUNAME file using the costname file and saves the setting in the input.dat file.
 
     Args:
-        obj (MarxanRESTHandler): The request handler instance.  
-        costname (string): The name of the costname file to use without the .cost extension.  
+        obj (MarxanRESTHandler): The request handler instance.
+        costname (string): The name of the costname file to use without the .cost extension.
     Returns:
-        None  
+        None
     Raises:
-        MarxanServicesError: If the costname file does not exist. 
+        MarxanServicesError: If the costname file does not exist.
     """
     filename = obj.folder_input + costname + ".cost"
     # load the pu.dat file
@@ -1053,15 +1067,15 @@ async def _updateCosts(obj, costname):
 
 
 def _deleteCost(obj, costname):
-    """Deletes a cost profile. 
+    """Deletes a cost profile.
 
     Args:
-        obj (MarxanRESTHandler): The request handler instance.  
-        costname (string): The name of the costname file to delete without the .cost extension.  
+        obj (MarxanRESTHandler): The request handler instance.
+        costname (string): The name of the costname file to delete without the .cost extension.
     Returns:
-        None  
+        None
     Raises:
-        MarxanServicesError: If the costname file does not exist. 
+        MarxanServicesError: If the costname file does not exist.
     """
     filename = obj.folder_input + costname + ".cost"
     # check the cost file exists
@@ -1076,7 +1090,7 @@ async def _getPlanningUnitGrids():
     """Gets the data for all of the planning grids.
 
     Args:
-        None  
+        None
     Returns:
          dict[]: The planning grids data.
     """
@@ -1087,9 +1101,9 @@ async def _estimatePlanningUnitCount(areakm2, iso3, domain):
     """Estimates the number of planning grid units in the passed country, area and domain.
 
     Args:
-        areakm2 (string): The area of the planning grid in Km2.  
-        iso3 (string): The country iso3 3-letter code.  
-        domain (string): The domain for the planning grid. One of marine or terrestrial.  
+        areakm2 (string): The area of the planning grid in Km2.
+        iso3 (string): The country iso3 3-letter code.
+        domain (string): The domain for the planning grid. One of marine or terrestrial.
     Returns:
         int: The number of planning grid units.
     """
@@ -1107,7 +1121,7 @@ def _getProtectedAreaIntersectionsData(obj):
     Args:
         obj (MarxanRESTHandler): The request handler instance.
     Returns:
-        None  
+        None
     """
     df = _loadCSV(obj.folder_input + PROTECTED_AREA_INTERSECTIONS_FILENAME)
     # normalise the protected area intersections to make the payload smaller
@@ -1119,9 +1133,9 @@ def _invalidateProtectedAreaIntersections():
     """Resets all of the protected area intersections information for all projects - for example when a new version of the wdpa is installed.
 
     Args:
-        None  
+        None
     Returns:
-        None  
+        None
     """
     # get all of the existing protected area intersection files - this includes projects in the /_marxan_web_resources/case_studies folder
     files = _getFilesInFolderRecursive(
@@ -1136,11 +1150,11 @@ async def _preprocessProtectedAreas(obj, planning_grid_name, output_folder):
     """Intersects the planning grid with the WDPA and writes the results of that intersection to the output folder.
 
     Args:
-        obj (MarxanRESTHandler): The request handler instance.  
-        planning_grid_name (string): The name of the planning grid.  
-        output_folder (string): The full path to the folder where the results will be written.  
+        obj (MarxanRESTHandler): The request handler instance.
+        planning_grid_name (string): The name of the planning grid.
+        output_folder (string): The full path to the folder where the results will be written.
     Returns:
-        None  
+        None
     """
     # set the threshold for the intersection area
     threshold = 0.5
@@ -1159,8 +1173,8 @@ async def _reprocessProtectedAreas(obj, folder):
     """Redoes the protected area preprocessing for the projects in the passed folder - for example, when the WDPA is updated we want to redo the protected area preprocessing for all of the case study projects so that new registered users have the most up-to-date intersection data.
 
     Args:
-        obj (MarxanWebSocketHandler): The websocket handler instance.  
-        folder (string): The full path to the folder where the projects are located.  
+        obj (MarxanWebSocketHandler): The websocket handler instance.
+        folder (string): The full path to the folder where the projects are located.
     Returns:
         string[]: A list of the project folders that were reprocessed.
     """
@@ -1190,7 +1204,7 @@ def _getMarxanLog(obj):
     Args:
         obj (MarxanRESTHandler): The request handler instance.
     Returns:
-        None  
+        None
     """
     if (os.path.exists(obj.folder_output + OUTPUT_LOG_FILENAME)):
         log = _readFileUnicode(obj.folder_output + OUTPUT_LOG_FILENAME)
@@ -1200,14 +1214,14 @@ def _getMarxanLog(obj):
 
 
 def _getOutputFilename(filename):
-    """Gets the correct filename+extension (normally either csv or txt) of a Marxan file. The extension of the Marxan output files depends on the settings SAVE* in the input.dat file and on the version of marxan. 
+    """Gets the correct filename+extension (normally either csv or txt) of a Marxan file. The extension of the Marxan output files depends on the settings SAVE* in the input.dat file and on the version of marxan.
 
     Args:
         filename (string): The full path to the file to get the correct filename for.
     Returns:
         The full path to the file with the correct extension.
     Raises:
-        MarxanServicesError: If the file does not exist. 
+        MarxanServicesError: If the file does not exist.
     """
     # filename is the full filename without an extension
     files = glob.glob(filename + "*")
@@ -1225,7 +1239,7 @@ def _getBestSolution(obj):
     Args:
         obj (MarxanRESTHandler): The request handler instance.
     Returns:
-        None  
+        None
     """
     filename = _getOutputFilename(obj.folder_output + BEST_SOLUTION_FILENAME)
     obj.bestSolution = _loadCSV(filename)
@@ -1237,7 +1251,7 @@ def _getOutputSummary(obj):
     Args:
         obj (MarxanRESTHandler): The request handler instance.
     Returns:
-        None  
+        None
     """
     filename = _getOutputFilename(obj.folder_output + OUTPUT_SUMMARY_FILENAME)
     obj.outputSummary = _loadCSV(filename)
@@ -1249,7 +1263,7 @@ def _getSummedSolution(obj):
     Args:
         obj (MarxanRESTHandler): The request handler instance.
     Returns:
-        None  
+        None
     """
     filename = _getOutputFilename(obj.folder_output + SUMMED_SOLUTION_FILENAME)
     df = _loadCSV(filename)
@@ -1257,15 +1271,15 @@ def _getSummedSolution(obj):
 
 
 def _getSolution(obj, solutionId):
-    """Gets the data from a marxan single solution file. These are normalised and set on the passed obj in the solution attribute. 
+    """Gets the data from a marxan single solution file. These are normalised and set on the passed obj in the solution attribute.
 
     Args:
-        obj (MarxanRESTHandler): The request handler instance.  
-        solutionId (string): The id of the solution to get, e.g. 1,2,3 etc.  
+        obj (MarxanRESTHandler): The request handler instance.
+        solutionId (string): The id of the solution to get, e.g. 1,2,3 etc.
     Returns:
-        None  
+        None
     Raises:
-        MarxanServicesError: If the solution does not exist. 
+        MarxanServicesError: If the solution does not exist.
     """
     try:
         filename = _getOutputFilename(
@@ -1291,7 +1305,7 @@ def _getMissingValues(obj, solutionId):
     Args:
         obj (MarxanRESTHandler): The request handler instance.
     Returns:
-        None  
+        None
     """
     filename = _getOutputFilename(
         obj.folder_output + MISSING_VALUES_FILE_PREFIX + "%05d" % int(solutionId))
@@ -1303,13 +1317,13 @@ async def _updateSpeciesFile(obj, interest_features, target_values, spf_values, 
     """Updates/creates the SPECNAME file with the passed interest features.
 
     Args:
-        obj (MarxanRESTHandler): The request handler instance.  
-        interest_features (string): A comma-separated string with the interest features.  
-        target_values (string): A comma-separated string with the corresponding interest feature targets.  
-        spf_values (string): A comma-separated string with the corresponding interest feature spf values.  
-        create (bool): Optional. If True you are creating a new SPECNAME file. Default value is False.  
+        obj (MarxanRESTHandler): The request handler instance.
+        interest_features (string): A comma-separated string with the interest features.
+        target_values (string): A comma-separated string with the corresponding interest feature targets.
+        spf_values (string): A comma-separated string with the corresponding interest feature spf values.
+        create (bool): Optional. If True you are creating a new SPECNAME file. Default value is False.
     Returns:
-        None  
+        None
     """
     # get the features to create/update as a list of integer ids
     ids = _txtIntsToList(interest_features)
@@ -1372,8 +1386,8 @@ def _puidsArrayToPuDatFormat(puid_array, pu_status):
     """Creates a dataframe of the puid_array and pu_status arrays.
 
     Args:
-        puid_array (int[]): The array of planning unit IDs.  
-        pu_status (int[]): The array of planning unit statuses.  
+        puid_array (int[]): The array of planning unit IDs.
+        pu_status (int[]): The array of planning unit statuses.
     Returns:
          pandas.DataFrame: The data with the columns id and status_new.
     """
@@ -1384,10 +1398,10 @@ async def _createPuFile(obj, planning_grid_name):
     """Creates the PUNAME file using the ids from the PostGIS feature class as the planning unit ids in the PUNAME file.
 
     Args:
-        obj (MarxanRESTHandler): The request handler instance.  
-        planning_grid_name (string): The name of the planning grid.  
+        obj (MarxanRESTHandler): The request handler instance.
+        planning_grid_name (string): The name of the planning grid.
     Returns:
-        None  
+        None
     """
     # get the path to the pu.dat file
     filename = obj.folder_input + PLANNING_UNITS_FILENAME
@@ -1402,12 +1416,12 @@ async def _updatePuFile(obj, status1_ids, status2_ids, status3_ids):
     """Updates the PUNAME file with the passed arrays of ids for the various statuses (1,2 and 3).
 
     Args:
-        obj (MarxanRESTHandler): The request handler instance.  
-        status1_ids (int[]): Array of planning grid units that have a status of 1.  
-        status2_ids (int[]): Array of planning grid units that have a status of 2.  
-        status3_ids (int[]): Array of planning grid units that have a status of 3.  
+        obj (MarxanRESTHandler): The request handler instance.
+        status1_ids (int[]): Array of planning grid units that have a status of 1.
+        status2_ids (int[]): Array of planning grid units that have a status of 2.
+        status3_ids (int[]): Array of planning grid units that have a status of 3.
     Returns:
-        None  
+        None
     """
     status1 = _puidsArrayToPuDatFormat(status1_ids, 1)
     status2 = _puidsArrayToPuDatFormat(status2_ids, 2)
@@ -1436,8 +1450,8 @@ def _loadCSV(filename, errorIfNotExists=False):
     """Loads a csv file and returns the data as a dataframe or an empty dataframe if the file does not exist. If errorIfNotExists is True then it raises an error.
 
     Args:
-        filename (string): Full path to the file that will be loaded.  
-        errorIfNotExists (bool): Optional. If True, raises and exception if the file does not exist. Defaults to False.  
+        filename (string): Full path to the file that will be loaded.
+        errorIfNotExists (bool): Optional. If True, raises and exception if the file does not exist. Defaults to False.
     Returns:
          pandas.DataFrame: The data from the file as a dataframe.
     """
@@ -1454,15 +1468,15 @@ def _loadCSV(filename, errorIfNotExists=False):
 
 
 async def _writeCSV(obj, fileToWrite, df, writeIndex=False):
-    """Saves the dataframe to a csv file specified by the fileToWrite, e.g. _writeCSV(self, "PUVSPRNAME", df) - this only applies to the files managed by Marxan in the input.dat file, e.g. SPECNAME, PUNAME, PUVSPRNAME, BOUNDNAME. 
+    """Saves the dataframe to a csv file specified by the fileToWrite, e.g. _writeCSV(self, "PUVSPRNAME", df) - this only applies to the files managed by Marxan in the input.dat file, e.g. SPECNAME, PUNAME, PUVSPRNAME, BOUNDNAME.
 
     Args:
-        obj (MarxanRESTHandler): The request handler instance.  
-        fileToWrite (string): The name of the input file as specified in the Input Files section of the input.dat file, e.g. one of INPUTDIR, PUNAME, SPECNAME, PUVSPRNAME or BOUNDNAME.  
-        df (pandas.DataFrame): The dataframe to write.  
-        writeIndex (bool): Optional. If True will write the dataframe index to the file as well. Default value is False.  
+        obj (MarxanRESTHandler): The request handler instance.
+        fileToWrite (string): The name of the input file as specified in the Input Files section of the input.dat file, e.g. one of INPUTDIR, PUNAME, SPECNAME, PUVSPRNAME or BOUNDNAME.
+        df (pandas.DataFrame): The dataframe to write.
+        writeIndex (bool): Optional. If True will write the dataframe index to the file as well. Default value is False.
     Returns:
-        None  
+        None
     Raises:
         MarxanServicesError: If the filename has not been set in the input.dat file.
     """
@@ -1477,10 +1491,10 @@ def _writeToDatFile(file, dataframe):
     """Writes the dataframe to the file - for files not managed in the input.dat file or if the filename has not yet been set in the input.dat file.
 
     Args:
-        file (string): The full path to the file that will be written.  
-        dataframe (pandas.DataFrame): The dataframe to write.  
+        file (string): The full path to the file that will be written.
+        dataframe (pandas.DataFrame): The dataframe to write.
     Returns:
-        None  
+        None
     """
     # see if the file exists
     if (os.path.exists(file)):
@@ -1497,13 +1511,13 @@ def _writeToDatFile(file, dataframe):
 
 
 def _writeFile(filename, data):
-    """Binary write to file useful for shapefiles etc.    
+    """Binary write to file useful for shapefiles etc.
 
     Args:
-        filename (string): The full path to the file that will be written.  
-        data (string): The binary data to write.  
+        filename (string): The full path to the file that will be written.
+        data (string): The binary data to write.
     Returns:
-        None  
+        None
     """
     f = open(filename, 'wb')
     f.write(data)
@@ -1546,11 +1560,11 @@ def _writeFileUnicode(filename, s, mode='w'):
     """Writes a files contents as a unicode string
 
     Args:
-        filename (string): The full path to the file that will be written.  
-        s (string): The unicode string to write.  
-        mode (string): Optional. The file write mode. Default value is w.  
+        filename (string): The full path to the file that will be written.
+        s (string): The unicode string to write.
+        mode (string): Optional. The file write mode. Default value is w.
     Returns:
-        None  
+        None
     """
     f = io.open(filename, mode, encoding="utf-8")
     f.write(s)
@@ -1563,7 +1577,7 @@ def _deleteAllFiles(folder):
     Args:
         folder (string): The full path to the folder where to delete files.
     Returns:
-        None  
+        None
     """
     files = glob.glob(folder + "*")
     for f in files:
@@ -1572,13 +1586,13 @@ def _deleteAllFiles(folder):
 
 
 def _copyDirectory(src, dest):
-    """Copies a directory from src to dest recursively. 
+    """Copies a directory from src to dest recursively.
 
     Args:
-        src (dict): The source folder.  
-        dest (dict): The destination folder.  
+        src (dict): The source folder.
+        dest (dict): The destination folder.
     Returns:
-        None  
+        None
     Raises:
         MarxanServicesError: If the source folder does not exist or if the source and destination folders are the same.
     """
@@ -1596,11 +1610,11 @@ def _addParameter(_type, key, value):
     """Creates a new parameter in the *.dat file, either user (user.dat), project (input.dat) or server (server.dat), by iterating through all the files and adding the key/value if it doesnt already exist.
 
     Args:
-        _type (string): 
-            The type of configuration file to add the parameter to. One of server, user or project.  
-        key (string): 
+        _type (string):
+            The type of configuration file to add the parameter to. One of server, user or project.
+        key (string):
             The key to create/update.
-        value (string): 
+        value (string):
             The value to set.
     Returns:
         string[]: A list of the files that were updated.
@@ -1643,10 +1657,10 @@ def _updateParameters(filename, newParams):
     """Updates the parameters in the file with the new parameters. The parameters with the keys that match those in newParams are updated and all the rest are left alone.
 
     Args:
-        filename (string): Full path to the file that will be updated.  
-        newParams (dict): A dict of the key/value pairs that will be updated.  
+        filename (string): Full path to the file that will be updated.
+        newParams (dict): A dict of the key/value pairs that will be updated.
     Returns:
-        None  
+        None
     """
     if newParams:
         # get the existing parameters
@@ -1682,7 +1696,7 @@ def _getEndOfLine(text):
 
 
 def _getDictValue(_dict, key):
-    """Gets the key value from a dict. 
+    """Gets the key value from a dict.
 
     Args:
         _dict (dict): The dict to search.
@@ -1716,8 +1730,8 @@ def _getKeyValue(text, parameterName):
     """Gets the key value combination from the text, e.g. PUNAME pu.dat returns ("PUNAME", "pu.dat")
 
     Args:
-        text (string): The text to get the key/value from.  
-        parameterName (string): The key to get the value for.  
+        text (string): The text to get the key/value from.
+        parameterName (string): The key to get the value for.
     Returns:
         tuple: The key and value for the key.
     """
@@ -1749,10 +1763,10 @@ def _normaliseDataFrame(df, columnToNormaliseBy, puidColumnName, classes=None):
     """Converts a dataframe with duplicate values into a normalised array.
 
     Args:
-        df (pandas.DataFrame): The datafrom to normalise.  
-        columnToNormaliseBy (string): The column in the dataframe that will be used to provide the headings for the normalised data, e.g. the Status column will produce 1,2,3.  
-        puidColumnName (string): The name of the planning grid unit ID column to use to create the array of values.  
-        classes (int): Optional. The number of classes to classify the data into. Default value is None.  
+        df (pandas.DataFrame): The datafrom to normalise.
+        columnToNormaliseBy (string): The column in the dataframe that will be used to provide the headings for the normalised data, e.g. the Status column will produce 1,2,3.
+        puidColumnName (string): The name of the planning grid unit ID column to use to create the array of values.
+        classes (int): Optional. The number of classes to classify the data into. Default value is None.
     Returns:
           list[]: The normalised data from the dataframe organised as a list of values (headings) each with a list of PUIDs, e.g. 32,2374,5867,24967..
     """
@@ -1791,11 +1805,11 @@ def _updateDataFrame(df, mapping, df_join_field, mapping_join_field, new_values_
     """Updates the values in the dataframe df using a mapping dataframe - the values in the df_join_field are replaced by those in new_values_field. For example, df has id,prop,spf; mapping has id,new_id; calling _updateDataFrame(df, mapping, 'id', 'id', 'new_id') will update the df.id field with mapping.new_id
 
     Args:
-        df (pandas.DataFrame): The dataframe that will be updated.  
-        mapping (pandas.DataFrame): The dataframe that will be used to update the values in df.  
-        df_join_field (string): The field in the dataframe df that will be used to join onto the mapping dataframe and whose values will be updated.  
-        mapping_join_field (string): The field in the dataframe mapping that will be used to join onto the df dataframe.  
-        new_values_field (string): The field to use to populate the new values in df_join_field.  
+        df (pandas.DataFrame): The dataframe that will be updated.
+        mapping (pandas.DataFrame): The dataframe that will be used to update the values in df.
+        df_join_field (string): The field in the dataframe df that will be used to join onto the mapping dataframe and whose values will be updated.
+        mapping_join_field (string): The field in the dataframe mapping that will be used to join onto the df dataframe.
+        new_values_field (string): The field to use to populate the new values in df_join_field.
     Returns:
         The updated dataframe.
     """
@@ -1824,8 +1838,8 @@ def _getPuvsprStats(df, speciesId):
     """Gets the statistics for a feature from the PUVSPR file, i.e. the count and area, as a dataframe record
 
     Args:
-        df (pandas.DataFrame): The dataframe that will be used.  
-        speciesId (int): The feature id that will be summarised.  
+        df (pandas.DataFrame): The dataframe that will be used.
+        speciesId (int): The feature id that will be summarised.
     Returns:
          pandas.DataFrame: The summary statistics with the following columns: id, pu_area, pu_count
     """
@@ -1840,14 +1854,14 @@ def _getPuvsprStats(df, speciesId):
 
 
 def _deleteRecordsInTextFile(filename, id_columnname, ids):
-    """Deletes the records in the text file that have id values that match the passed ids. 
+    """Deletes the records in the text file that have id values that match the passed ids.
 
     Args:
-        filename (string): Full path to the file that will be processed.  
-        id_columnname (string): The field to match the ids in.  
-        ids (int[]): A list of int values that are the feature ids.  
+        filename (string): Full path to the file that will be processed.
+        id_columnname (string): The field to match the ids in.
+        ids (int[]): A list of int values that are the feature ids.
     Returns:
-        None  
+        None
     Raises:
         MarxanServicesError: If the file does not exist.
     """
@@ -1877,13 +1891,14 @@ def _txtIntsToList(txtInts):
 
 
 def _validateArguments(arguments, argumentList):
-    """Checks that all of the arguments in argumentList are in the arguments dictionary. 
+    """Checks that all of the arguments in argumentList are in the arguments dictionary.
 
     Args:
-        arguments (dict): See https://www.tornadoweb.org/en/stable/httputil.html#tornado.httputil.HTTPServerRequest.arguments  
-        argumentList (string[]): The list of arguments that must be present.   
+        #tornado.httputil.HTTPServerRequest.arguments
+        arguments (dict): See https://www.tornadoweb.org/en/stable/httputil.html
+        argumentList (string[]): The list of arguments that must be present.
     Returns:
-        None  
+        None
     Raises:
         MarxanServicesError: If any of the required arguments are not present.
     """
@@ -1913,8 +1928,9 @@ def _getIntArrayFromArg(arguments, argName):
     """Gets the argName from arguments as an array of integers, e.g. ['12,15,4,6'] -> [12,15,4,6]
 
     Args:
-        arguments (dict): See https://www.tornadoweb.org/en/stable/httputil.html#tornado.httputil.HTTPServerRequest.arguments  
-        argName (string): The argument to split into integers.  
+        #tornado.httputil.HTTPServerRequest.arguments
+        arguments (dict): See https://www.tornadoweb.org/en/stable/httputil.html
+        argName (string): The argument to split into integers.
     Returns:
         int[]: A list of integers from the argument.
     """
@@ -1925,11 +1941,11 @@ def _getIntArrayFromArg(arguments, argName):
 
 
 def _createZipfile(folder, feature_class_name):
-    """Creates a zip file from all the files that have the root name feature_class_name in the folder. 
+    """Creates a zip file from all the files that have the root name feature_class_name in the folder.
 
     Args:
-        folder (string): The full path to the folder with the files that will be matched.  
-        feature_class_name (string): The root filename that will match the files in folder that will be added to the zip file.  
+        folder (string): The full path to the folder with the files that will be matched.
+        feature_class_name (string): The root filename that will match the files in folder that will be added to the zip file.
     Returns:
         string: The full path to the zip file.
     """
@@ -1952,10 +1968,10 @@ def _deleteArchiveFiles(folder, archivename):
     """Deletes all files matching the archivename in the folder. This is useful for deleting constituent files from a zipped shapefile that has been unzipped.
 
     Args:
-        folder (string): The full path to the folder with the files that will be matched.  
-        archivename (string): The root filename that will match the files in folder that will be deleted.  
+        folder (string): The full path to the folder with the files that will be matched.
+        archivename (string): The root filename that will match the files in folder that will be deleted.
     Returns:
-        None  
+        None
     """
     # get the matching files
     files = glob.glob(folder + archivename + '.*')
@@ -1969,11 +1985,11 @@ def _deleteZippedShapefile(folder, zipfile, archivename):
     """Deletes a zip file and the archive files, e.g. deleteZippedShapefile(MARXAN_FOLDER, "pngprovshapes.zip","pngprov")
 
     Args:
-        folder (string): The full path to the folder which contains the zip file and/or the individual files.  
-        zipfile (string): The name of the zip file that will be deleted.  
-        archivename (string): The root filename that will match the files in folder that will be deleted.  
+        folder (string): The full path to the folder which contains the zip file and/or the individual files.
+        zipfile (string): The name of the zip file that will be deleted.
+        archivename (string): The root filename that will match the files in folder that will be deleted.
     Returns:
-        None  
+        None
     """
     # delete any archive files
     _deleteArchiveFiles(folder, archivename)
@@ -1986,10 +2002,10 @@ def _zipfolder(folder, zipFile):
     """Creates a zip file from a folder and all of its subfolders and puts the file into the target_dir folder - archive names are relative to folder.
 
     Args:
-        folder (string): The full path to the folder that will be zipped.  
-        zipFile (string): The name of the zip file that will be created.  
+        folder (string): The full path to the folder that will be zipped.
+        zipFile (string): The name of the zip file that will be created.
     Returns:
-        None  
+        None
     """
     zipobj = zipfile.ZipFile(zipFile + '.zip', 'w', zipfile.ZIP_DEFLATED)
     # get the length of the folder
@@ -2007,13 +2023,13 @@ def _zipfolder(folder, zipFile):
 
 
 def _unzipFile(folder, filename):
-    """Unzips a zip file. 
+    """Unzips a zip file.
 
     Args:
-        folder (string): The full path to the folder with the zip file.  
-        filename (string): The name of the zip file that will be unzipped.  
+        folder (string): The full path to the folder with the zip file.
+        filename (string): The name of the zip file that will be unzipped.
     Returns:
-        string[]: The list of filenames in the zip file that was unzipped. 
+        string[]: The list of filenames in the zip file that was unzipped.
     Raises:
         MarxanServicesError: If the zip file does not exist.
     """
@@ -2033,10 +2049,10 @@ def _unzipShapefile(folder, filename, rejectMultipleShapefiles=True, searchTerm=
     """Unzips a zipped shapefile.
 
     Args:
-        folder (string): The full path to the folder with the zip file.  
-        filename (string): The name of the zip file that will be unzipped.  
-        rejectMultipleShapefiles (bool): Optional. If True throws an exception if there are multiple shapefiles in the zip filename. Default value is True.  
-        searchTerm (string): Optional. Filters the members of the zipfile for those that match the searchTerm, e.g. if searchTerm = 'polygons' it will extract all members whos filename contains the text 'polygon'. Default value is None.  
+        folder (string): The full path to the folder with the zip file.
+        filename (string): The name of the zip file that will be unzipped.
+        rejectMultipleShapefiles (bool): Optional. If True throws an exception if there are multiple shapefiles in the zip filename. Default value is True.
+        searchTerm (string): Optional. Filters the members of the zipfile for those that match the searchTerm, e.g. if searchTerm = 'polygons' it will extract all members whos filename contains the text 'polygon'. Default value is None.
 
     Returns:
         string: The root filename of the first matching file that is unzipped minus the extension.
@@ -2105,8 +2121,8 @@ async def _uploadTilesetToMapbox(feature_class_name, mapbox_layer_name):
     """Exports the feature class to Mapbox as a new tileset.
 
     Args:
-        feature_class_name (string): The name of the feature class to export, zip and upload - this must exist in the PostGIS database.  
-        mapbox_layer_name (string): The name of the mapbox layer to be created. Currently not used.  
+        feature_class_name (string): The name of the feature class to export, zip and upload - this must exist in the PostGIS database.
+        mapbox_layer_name (string): The name of the mapbox layer to be created. Currently not used.
     Returns:
         string: Returns the uploadid of the job or 0 if the tileset already exists.
     """
@@ -2125,11 +2141,11 @@ async def _uploadTilesetToMapbox(feature_class_name, mapbox_layer_name):
 
 
 def _uploadTileset(filename, _name):
-    """Uploads a zip file to mapbox as a new tileset using the Mapbox Uploads API. 
+    """Uploads a zip file to mapbox as a new tileset using the Mapbox Uploads API.
 
     Args:
-        filename (string): The full path of the zip file to upload.  
-        _name (string): The name of the resulting tileset on Mapbox.  
+        filename (string): The full path of the zip file to upload.
+        _name (string): The name of the resulting tileset on Mapbox.
     Returns:
         string: Returns the uploadid of the job.
     Raises:
@@ -2151,7 +2167,7 @@ def _deleteTileset(tilesetid):
     Args:
         tilesetid (string): The tileset to delete.
     Returns:
-        None  
+        None
     """
     url = "https://api.mapbox.com/tilesets/v1/" + \
         MAPBOX_USER + "." + tilesetid + "?access_token=" + MBAT
@@ -2159,12 +2175,12 @@ def _deleteTileset(tilesetid):
 
 
 async def _deleteFeature(feature_class_name):
-    """Deletes a feature class and its associated metadata record from PostGIS and the tileset on Mapbox. 
+    """Deletes a feature class and its associated metadata record from PostGIS and the tileset on Mapbox.
 
     Args:
         feature_class_name (string): The name of the feature class to delete.
     Returns:
-        None  
+        None
     Raises:
         MarxanServicesError: If the feature cannot be deleted because it is system supplied or currently in use in one or more projects.
     """
@@ -2198,7 +2214,7 @@ async def _deleteFeatureClass(feature_class_name):
     Args:
         feature_class_name (string): The name of the feature class to delete.
     Returns:
-        None  
+        None
     """
     # delete the feature class
     await pg.execute(sql.SQL("DROP TABLE IF EXISTS marxan.{};").format(sql.Identifier(feature_class_name)))
@@ -2208,7 +2224,7 @@ def _getUniqueFeatureclassName(prefix):
     """Gets a unique name for a feature class using the passed prefix and ensures that it can be used in Mapbox where tileset IDs have a limit of 32 characters.
 
     Args:
-        prefix (string): The prefix to use for the feature class name. 
+        prefix (string): The prefix to use for the feature class name.
     Returns:
         string: The unique feature class name.
     """
@@ -2219,11 +2235,11 @@ async def _finishCreatingFeature(feature_class_name, name, description, source, 
     """Finishes the creation of a feature in PostGIS and uploads the feature to mapbox.
 
     Args:
-        feature_class_name (string): The feature class to finish creating.  
-        name (string): The name of the feature class that will be used as an alias in the metadata_interest_features table.  
-        description (string): The description for the feature class.  
-        source (string): The source for the feature.  
-        user (string): The user who created the feature.  
+        feature_class_name (string): The feature class to finish creating.
+        name (string): The name of the feature class that will be used as an alias in the metadata_interest_features table.
+        description (string): The description for the feature class.
+        source (string): The source for the feature.
+        user (string): The user who created the feature.
     Returns:
         tuple: the id of the created feature and an upload ID from Mapbox.
     """
@@ -2240,11 +2256,11 @@ async def _finishImportingFeature(feature_class_name, name, description, source,
     """Finishes creating a feature by adding a spatial index and a record in the metadata_interest_features table.
 
     Args:
-        feature_class_name (string): The feature class to finish creating.  
-        name (string): The name of the feature class that will be used as an alias in the metadata_interest_features table.  
-        description (string): The description for the feature class.  
-        source (string): The source for the feature.  
-        user (string): The user who created the feature.  
+        feature_class_name (string): The feature class to finish creating.
+        name (string): The name of the feature class that will be used as an alias in the metadata_interest_features table.
+        description (string): The description for the feature class.
+        source (string): The source for the feature.
+        user (string): The user who created the feature.
     Returns:
         int: The id of the feature created.
     Raises:
@@ -2284,13 +2300,13 @@ async def _finishImportingFeature(feature_class_name, name, description, source,
 
 
 async def _importPlanningUnitGrid(filename, name, description, user):
-    """Imports the planning unit grid from a zipped shapefile and starts the upload to Mapbox. 
+    """Imports the planning unit grid from a zipped shapefile and starts the upload to Mapbox.
 
     Args:
-        filename (string): The name of the zipped shapefile that will be imported. This is not the full path.  
-        name (string): The name of the planning grid that will be used as the alias in the metadata_planning_units table.  
-        description (string): The description for the planning grid.  
-        user (string): The user who created the planning grid.  
+        filename (string): The name of the zipped shapefile that will be imported. This is not the full path.
+        name (string): The name of the planning grid that will be used as the alias in the metadata_planning_units table.
+        description (string): The description for the planning grid.
+        user (string): The user who created the planning grid.
     Returns:
         dict: Containing the feature_class_sname, the Mapbox uploadId and the feature class alias.
     Raises:
@@ -2337,12 +2353,12 @@ async def _importPlanningUnitGrid(filename, name, description, user):
 
 
 async def _deletePlanningUnitGrid(planning_grid):
-    """Deletes a planning grid and the corresponding tileset on Mapbox. 
+    """Deletes a planning grid and the corresponding tileset on Mapbox.
 
     Args:
         planning_grid (string): The name of the planning grid that will be deleted.
     Returns:
-        None  
+        None
     Raises:
         MarxanServicesError: If the planning grid is system supplied or is in use by one or more projects.
     """
@@ -2375,8 +2391,8 @@ def _getFilesInFolderRecursive(folder, filename):
     """Gets an array of filenames in the folder recursively, e.g. ['/home/ubuntu/environment/marxan-server/users/admin/British Columbia Marine Case Study/input/spec.dat', etc]
 
     Args:
-        folder (string): The full path to the folder to search recursively.  
-        filename (string): The filename to search for.  
+        folder (string): The full path to the folder to search recursively.
+        filename (string): The filename to search for.
     Returns:
         string[]: A list of the full filenames of the found files.
     """
@@ -2392,9 +2408,9 @@ def _dataFrameContainsValue(df, column_name, value):
     """Searches the dataframe to see whether the value occurs in the column.
 
     Args:
-        df (pandas.DataFrame): The dataframe to search.  
-        column_name (string): The column to search in.  
-        value (string): The value to find.  
+        df (pandas.DataFrame): The dataframe to search.
+        column_name (string): The column to search in.
+        value (string): The value to find.
     Returns:
         bool: Returns True if the value is found in the dataframe column.
     """
@@ -2462,7 +2478,7 @@ async def _createFeaturePreprocessingFileFromImport(obj):
     Args:
         obj (MarxanRESTHandler): The request handler instance.
     Returns:
-        None  
+        None
     Raises:
         MarxanServicesError: If the imported Marxan project does not contain any records in the PUVSPR file.
     """
@@ -2491,8 +2507,8 @@ def _getGML(endpoint, featuretype):
     """Gets the gml data using the WFS endpoint and feature type
 
     Args:
-        endpoint (string): The url of the WFS endpoint to get the GML data from.  
-        featuretype (string): The name of the feature class in the WFS service to get the GML data from.  
+        endpoint (string): The url of the WFS endpoint to get the GML data from.
+        featuretype (string): The name of the feature class in the WFS service to get the GML data from.
     Returns:
         string: The gml as a text string.
     """
@@ -2524,11 +2540,11 @@ def _checkCORS(obj):
     Args:
         obj (MarxanRESTHandler): The request handler instance.
     Returns:
-        None  
+        None
     """
     # no CORS policy if security is disabled or if the server is running on localhost or if the request is for a permitted method
     # or if the user is 'guest' (if this is enabled) - dont set any headers - this will only work for GET requests - cross-domwin POST requests must have the headers
-    if (DISABLE_SECURITY or (obj.current_user == GUEST_USERNAME)):
+    if (DISABLE_SECURITY or obj.request.host[:9] == "localhost" or (obj.current_user == GUEST_USERNAME)):
         return
     # set the CORS headers
     _setCORS(obj)
@@ -2537,12 +2553,12 @@ def _checkCORS(obj):
 
 
 def _setCORS(obj):
-    """Sets the CORS headers on the request to prevent CORS errors in the client. 
+    """Sets the CORS headers on the request to prevent CORS errors in the client.
 
     Args:
         obj (MarxanRESTHandler): The request handler instance.
     Returns:
-        None  
+        None
     Raises:
         MarxanServicesError: If the request is not allowed to make cross-domain requests (based on the settings in the server.dat file).
     """
@@ -2569,12 +2585,12 @@ def _setCORS(obj):
 
 
 def _authenticate(obj):
-    """Test the request to make sure the user is authenticated. 
+    """Test the request to make sure the user is authenticated.
 
     Args:
         obj (MarxanRESTHandler): The request handler instance.
     Returns:
-        None  
+        None
     Raises:
         HTTPError: If the user is not authenticated (401).
     """
@@ -2590,10 +2606,10 @@ def _authoriseRole(obj, method):
     """Tests the role to make sure it is authorised to access the method.
 
     Args:
-        obj (MarxanRESTHandler): The request handler instance.  
-        method (string): The method to test authorisation for.  
+        obj (MarxanRESTHandler): The request handler instance.
+        method (string): The method to test authorisation for.
     Returns:
-        None  
+        None
     Raises:
         HTTPError: If the user is not authorised (403).
     """
@@ -2611,12 +2627,12 @@ def _authoriseRole(obj, method):
 
 
 def _authoriseUser(obj):
-    """Tests the user to make sure it is authorised to access the project - Admin users can access projects belonging to other users. 
+    """Tests the user to make sure it is authorised to access the project - Admin users can access projects belonging to other users.
 
     Args:
         obj (MarxanRESTHandler): The request handler instance.
     Returns:
-        None  
+        None
     Raises:
         HTTPError: If the user is not authorised (403).
     """
@@ -2650,11 +2666,11 @@ async def _exportAndZipShapefile(folder, feature_class_name, tEpsgCode="EPSG:432
     """Exports a feature class to a shapefile and then zips it.
 
     Args:
-        folder (string): Full path to the folder where the zip file will be created.  
-        feature_class_name (string): The name of the feature class in PostGIS that will be exported and zipped.  
-        tEpsgCode (string): Optional. The spatial reference system to use for the exported shapefile. Default value is "EPSG:4326".  
+        folder (string): Full path to the folder where the zip file will be created.
+        feature_class_name (string): The name of the feature class in PostGIS that will be exported and zipped.
+        tEpsgCode (string): Optional. The spatial reference system to use for the exported shapefile. Default value is "EPSG:4326".
     Returns:
-        string: The full path to the zip file created. 
+        string: The full path to the zip file created.
     """
     # export the shapefile
     await pg.exportToShapefile(folder, feature_class_name, tEpsgCode)
@@ -2667,8 +2683,8 @@ def _shapefileHasField(shapefile, fieldname):
     """Returns a boolean indicating if the passed shapefile has the fieldname - this is case sensitive.
 
     Args:
-        shapefile (string): The full path to the shapefile (*.shp).  
-        fieldname (string): The field to search for.  
+        shapefile (string): The full path to the shapefile (*.shp).
+        fieldname (string): The field to search for.
     Returns:
         bool: Returns True if the field occurs in the shapefile.
     """
@@ -2680,7 +2696,7 @@ def _shapefileHasField(shapefile, fieldname):
 
 
 def _getShapefileFieldNames(shapefile):
-    """Gets the names of the fields in a shapefile. 
+    """Gets the names of the fields in a shapefile.
 
     Args:
         shapefile (string): The full path to the shapefile (*.shp).
@@ -2711,8 +2727,8 @@ def _isProjectRunning(user, project):
     """Returns a boolean indicating if the users project is currently running
 
     Args:
-        user (string): The name of the user to search for.  
-        project (string): The name of the project to search for.  
+        user (string): The name of the user to search for.
+        project (string): The name of the project to search for.
     Returns:
         bool: Returns True if the project is already running.
     """
@@ -2726,9 +2742,9 @@ def _getRunLogs():
     """Gets the data from the run log as a dataframe.
 
     Args:
-        None  
+        None
     Returns:
-        None  
+        None
     """
     # get the data from the run log file
     df = _loadCSV(MARXAN_FOLDER + RUN_LOG_FILENAME)
@@ -2775,14 +2791,14 @@ def _getNumberOfRunsCompleted(obj):
 
 
 def _updateRunLog(pid, startTime, numRunsCompleted, numRunsRequired, status):
-    """Updates the run log with the details of the Marxan job when it has stopped for whatever reason - endtime, runtime, runs and status are all updated. 
+    """Updates the run log with the details of the Marxan job when it has stopped for whatever reason - endtime, runtime, runs and status are all updated.
 
     Args:
-        pid (int): The process ID of the Marxan run.  
-        startTime (datetime): The time the run started.  
-        numRunsCompleted (int): The number of runs that have completed.  
-        numRunsRequired (int): The number of runs required.  
-        status (string): The status of the run. One of Stopped, Completed, Killed.  
+        pid (int): The process ID of the Marxan run.
+        startTime (datetime): The time the run started.
+        numRunsCompleted (int): The number of runs that have completed.
+        numRunsRequired (int): The number of runs required.
+        status (string): The status of the run. One of Stopped, Completed, Killed.
     Returns:
         string: The status of the run with the passed pid. One of Stopped, Completed, Killed.
     Raises:
@@ -2818,8 +2834,8 @@ def _debugSQLStatement(sql, connection):
     """Debugging method to write out an sql statement to the console.
 
     Args:
-        sql (string, bytes or other): The sql statement to execute.  
-        connection (psycopg2.Connection): The connection instance.  
+        sql (string, bytes or other): The sql statement to execute.
+        connection (psycopg2.Connection): The connection instance.
     Returns:
     """
     if type(sql) is str:
@@ -2836,7 +2852,7 @@ def _checkZippedShapefile(shapefile):
     Args:
         shapefile (string): The full path to the shapefile (*.shp).
     Returns:
-        None  
+        None
     """
     # check there are any files present
     files = glob.glob(shapefile[:-4] + "*")
@@ -2856,12 +2872,12 @@ def _checkZippedShapefile(shapefile):
 
 
 def _getMBAT():
-    """Gets the MBAT from the registry. 
+    """Gets the MBAT from the registry.
 
     Args:
-        None  
+        None
     Returns:
-        None  
+        None
     Raises:
         MarxanServicesError: If the MBAT is not found.
     """
@@ -2880,10 +2896,10 @@ def _importDataFrame(df, table_name):
     """Imports a dataframe into a table - this is not part of the PostGIS class as it uses a different connection string - and it is not asynchronous.
 
     Args:
-        df (pandas.DataFrame): The dataframe to import into a table.  
-        table_name (string): The name of the table to create.  
+        df (pandas.DataFrame): The dataframe to import into a table.
+        table_name (string): The name of the table to create.
     Returns:
-        None  
+        None
     """
     # engine_text = 'postgresql://' + DATABASE_USER + ':' + \
     #     DATABASE_PASSWORD + '@' + DATABASE_HOST + '/' + DATABASE_NAME
@@ -2919,12 +2935,12 @@ def _getExceptionLastLine(exc_info):
 
 
 def _deleteShutdownFile():
-    """Deletes the file that schedules automatic shutdown of the machine that marxan-server is running on. 
+    """Deletes the file that schedules automatic shutdown of the machine that marxan-server is running on.
 
     Args:
-        None  
+        None
     Returns:
-        None  
+        None
     """
     if (os.path.exists(MARXAN_FOLDER + SHUTDOWN_FILENAME)):
         logging.warning("Deleting the shutdown file")
@@ -2936,8 +2952,8 @@ def _runCmd(cmd, suppressOutput=False):
     """Runs a command in a separate process. This is a utility method for running synchronous code in Tornado in a separate process (and thereby running it asynchronously).
 
     Args:
-        cmd (string): The command to run.  
-        suppressOutput (bool): Optional. If True, suppresses the output to stdout. Default value is False.  
+        cmd (string): The command to run.
+        suppressOutput (bool): Optional. If True, suppresses the output to stdout. Default value is False.
     Returns:
         int: Returns 0 if successful otherwise 1.
     """
@@ -2965,9 +2981,9 @@ async def _cleanup():
     """Runs a set of maintenance tasks to remove orphaned tables, tmp tables and clumping projects that may remain on the server.
 
     Args:
-        None  
+        None
     Returns:
-        None  
+        None
     """
     # database cleanup
     await pg.execute("SELECT marxan.deletedissolvedwdpafeatureclasses()")
@@ -3010,7 +3026,7 @@ class MarxanServicesError(Exception):
 
 
 class ExtendableObject(object):
-    """Custom class for allowing objects to be extended with new attributes. 
+    """Custom class for allowing objects to be extended with new attributes.
     """
     pass
 
@@ -3023,7 +3039,7 @@ class PostGIS():
     """Utility class for interacting with PostGIS and reading and writing data. Within this module there is a singleton instance called pg.
 
     Attributes:
-        pool: An aiopg.pool used for managing connections to PostGIS.  
+        pool: An aiopg.pool used for managing connections to PostGIS.
     """
     async def initialise(self):
         """On initialise, creates an attribute that points to the database pool that is managing all of the connections to PostGIS
@@ -3032,13 +3048,13 @@ class PostGIS():
         self.pool = await aiopg.create_pool(CONNECTION_STRING, timeout=None, minsize=50, maxsize=250)
 
     async def execute(self, sql, data=None, returnFormat=None, filename=None, socketHandler=None):
-        """Executes a query and optionally returns the records or writes them to file. 
+        """Executes a query and optionally returns the records or writes them to file.
 
         Args:
-            sql (string): The sql string to execute.  
-            data (list): Optional. A list of parameters that will be substituted into the sql expression when mogrified. Default value is None.  
-            returnFormat (string): Optional. If the query returns results, specifies the return format. One of Array, DataFrame, Dict or File (writes the results to a csv file).  
-            socketHandler (MarxanWebSocketHandler): Optional. If passed, sets the pid of the query on the WebSocketHandler instance so that it can be stopped.  
+            sql (string): The sql string to execute.
+            data (list): Optional. A list of parameters that will be substituted into the sql expression when mogrified. Default value is None.
+            returnFormat (string): Optional. If the query returns results, specifies the return format. One of Array, DataFrame, Dict or File (writes the results to a csv file).
+            socketHandler (MarxanWebSocketHandler): Optional. If passed, sets the pid of the query on the WebSocketHandler instance so that it can be stopped.
         Returns:
             dict[], tuple[] or pandas.DataFrame: The records from the query.
         Raises:
@@ -3099,18 +3115,18 @@ class PostGIS():
             await self.pool.release(conn)
 
     async def importFile(self, folder, filename, feature_class_name, sEpsgCode, tEpsgCode, splitAtDateline=True, sourceFeatureClass=''):
-        """Imports a file or file geodatabase feature class into PostGIS using ogr2ogr. 
+        """Imports a file or file geodatabase feature class into PostGIS using ogr2ogr.
 
         Args:
-            folder (string): The full path to where the file is located.  
-            filename (string): The name of the file to import.  
-            feature_class_name (string): The name of the destination feature class which will be created.  
-            sEpsgCode (string): The source EPSG code.  
-            tEpsgCode (string): The target EPSG code.  
-            splitAtDateline (bool): Optional. Set to True to split any features at the dateline. Default value is True.  
-            sourceFeatureClass (string): Optional. The name of the source feature class within the file geodatabase to import. Default value is an empty string. File geodatabase imports only.  
+            folder (string): The full path to where the file is located.
+            filename (string): The name of the file to import.
+            feature_class_name (string): The name of the destination feature class which will be created.
+            sEpsgCode (string): The source EPSG code.
+            tEpsgCode (string): The target EPSG code.
+            splitAtDateline (bool): Optional. Set to True to split any features at the dateline. Default value is True.
+            sourceFeatureClass (string): Optional. The name of the source feature class within the file geodatabase to import. Default value is an empty string. File geodatabase imports only.
         Returns:
-            None  
+            None
         Raises:
             MarxanServicesError: If the ogr2ogr import fails.
         """
@@ -3138,17 +3154,17 @@ class PostGIS():
             raise MarxanServicesError(e.args[0])
 
     async def importShapefile(self, folder, shapefile, feature_class_name, sEpsgCode="EPSG:4326", tEpsgCode="EPSG:4326", splitAtDateline=True):
-        """Imports a shapefile into PostGIS using ogr2ogr. 
+        """Imports a shapefile into PostGIS using ogr2ogr.
 
         Args:
-            folder (string): The full path to where the shapefile is located.  
-            shapefile (string): The name of the shapefile to import.  
-            feature_class_name (string): The name of the destination feature class which will be created.  
-            sEpsgCode (string): Optional. The source EPSG code. Default value is 'EPSG:4326' (WGS84).  
-            tEpsgCode (string): Optional. The target EPSG code. Default value is 'EPSG:4326' (WGS84).  
-            splitAtDateline (bool): Optional. Set to True to split any features at the dateline. Default value is True.  
+            folder (string): The full path to where the shapefile is located.
+            shapefile (string): The name of the shapefile to import.
+            feature_class_name (string): The name of the destination feature class which will be created.
+            sEpsgCode (string): Optional. The source EPSG code. Default value is 'EPSG:4326' (WGS84).
+            tEpsgCode (string): Optional. The target EPSG code. Default value is 'EPSG:4326' (WGS84).
+            splitAtDateline (bool): Optional. Set to True to split any features at the dateline. Default value is True.
         Returns:
-            None  
+            None
         Raises:
             MarxanServicesError: If the ogr2ogr import fails.
         """
@@ -3158,17 +3174,17 @@ class PostGIS():
         await self.importFile(folder, shapefile, feature_class_name, sEpsgCode, tEpsgCode, splitAtDateline)
 
     async def importGml(self, folder, gmlfilename, feature_class_name, sEpsgCode="EPSG:4326", tEpsgCode="EPSG:4326", splitAtDateline=True):
-        """Imports a gml file into PostGIS using ogr2ogr. 
+        """Imports a gml file into PostGIS using ogr2ogr.
 
         Args:
-            folder (string): The full path to where the gml file is located.  
-            gmlfilename (string): The name of the gml file to import.  
-            feature_class_name (string): The name of the destination feature class which will be created.  
-            sEpsgCode (string): Optional. The source EPSG code. Default value is 'EPSG:4326' (WGS84).  
-            tEpsgCode (string): Optional. The target EPSG code. Default value is 'EPSG:4326' (WGS84).  
-            splitAtDateline (bool): Optional. Set to True to split any features at the dateline. Default value is True.  
+            folder (string): The full path to where the gml file is located.
+            gmlfilename (string): The name of the gml file to import.
+            feature_class_name (string): The name of the destination feature class which will be created.
+            sEpsgCode (string): Optional. The source EPSG code. Default value is 'EPSG:4326' (WGS84).
+            tEpsgCode (string): Optional. The target EPSG code. Default value is 'EPSG:4326' (WGS84).
+            splitAtDateline (bool): Optional. Set to True to split any features at the dateline. Default value is True.
         Returns:
-            None  
+            None
         Raises:
             MarxanServicesError: If the ogr2ogr import fails.
         """
@@ -3176,18 +3192,18 @@ class PostGIS():
         await self.importFile(folder, gmlfilename, feature_class_name, sEpsgCode, tEpsgCode, splitAtDateline)
 
     async def importFileGDBFeatureClass(self, folder, fileGDB, sourceFeatureClass, destFeatureClass, sEpsgCode="EPSG:4326", tEpsgCode="EPSG:4326", splitAtDateline=True):
-        """Imports a feature class in a file geodatabase into PostGIS using ogr2ogr. 
+        """Imports a feature class in a file geodatabase into PostGIS using ogr2ogr.
 
         Args:
-            folder (string): The full path to the folder where the file geodatabase is located.  
-            fileGDB (string): The name of the file geodatabase (including the .gdb extension).  
-            sourceFeatureClass (string): The name of the feature class in the file geodatabase that will be imported.  
-            destFeatureClass (string): The name of the destination feature class which will be created.  
-            sEpsgCode (string): Optional. The source EPSG code. Default value is 'EPSG:4326' (WGS84).  
-            tEpsgCode (string): Optional. The target EPSG code. Default value is 'EPSG:4326' (WGS84).  
-            splitAtDateline (bool): Optional. Set to True to split any features at the dateline. Default value is True.  
+            folder (string): The full path to the folder where the file geodatabase is located.
+            fileGDB (string): The name of the file geodatabase (including the .gdb extension).
+            sourceFeatureClass (string): The name of the feature class in the file geodatabase that will be imported.
+            destFeatureClass (string): The name of the destination feature class which will be created.
+            sEpsgCode (string): Optional. The source EPSG code. Default value is 'EPSG:4326' (WGS84).
+            tEpsgCode (string): Optional. The target EPSG code. Default value is 'EPSG:4326' (WGS84).
+            splitAtDateline (bool): Optional. Set to True to split any features at the dateline. Default value is True.
         Returns:
-            None  
+            None
         Raises:
             MarxanServicesError: If the ogr2ogr import fails.
         """
@@ -3195,12 +3211,12 @@ class PostGIS():
         await self.importFile(folder, fileGDB, destFeatureClass, sEpsgCode, tEpsgCode, splitAtDateline, sourceFeatureClass)
 
     async def exportToShapefile(self, exportFolder, feature_class_sname, tEpsgCode="EPSG:4326"):
-        """Exports a feature class from postgis to a shapefile using ogr2ogr. 
+        """Exports a feature class from postgis to a shapefile using ogr2ogr.
 
         Args:
-            exportFolder (string): The full path to where the shapefile will be exported.  
-            feature_class_sname (string): The name of the feature class in PostGIS to export.  
-            tEpsgCode (string): Optional. The target EPSG code. Default value is 'EPSG:4326' (WGS84).  
+            exportFolder (string): The full path to where the shapefile will be exported.
+            feature_class_sname (string): The name of the feature class in PostGIS to export.
+            tEpsgCode (string): Optional. The target EPSG code. Default value is 'EPSG:4326' (WGS84).
         Returns:
             int: Returns 0 if successful otherwise 1.
         Raises:
@@ -3225,7 +3241,7 @@ class PostGIS():
         Args:
             feature_class_sname (string): The name of the feature class in PostGIS to test.
         Returns:
-            None  
+            None
         Raises:
             MarxanServicesError: If the feature class is not valid.
         """
@@ -3240,10 +3256,10 @@ class PostGIS():
         """Creates a primary key on the column in the passed feature_class.
 
         Args:
-            feature_class_sname (string): The name of the feature class in PostGIS on which to create the primary key.  
-            column (string): The name of the column to use to create the primary key.  
+            feature_class_sname (string): The name of the feature class in PostGIS on which to create the primary key.
+            column (string): The name of the column to use to create the primary key.
         Returns:
-            None  
+            None
         """
         await self.execute(sql.SQL("ALTER TABLE marxan.{tbl} ADD CONSTRAINT {key} PRIMARY KEY ({col});").format(tbl=sql.Identifier(feature_class_name), key=sql.Identifier("idx_" + uuid.uuid4().hex), col=sql.Identifier(column)))
 
@@ -3251,9 +3267,9 @@ class PostGIS():
         """Gets the geometry type of the passed feature_class.
 
         Args:
-            feature_class_sname (string): The name of the feature class in PostGIS to return the geometry type for.  
+            feature_class_sname (string): The name of the feature class in PostGIS to return the geometry type for.
         Returns:
-            string: The PostGIS geometry type, e.g. ST_PointgetGeometryType  
+            string: The PostGIS geometry type, e.g. ST_PointgetGeometryType
         """
         geometryType = await self.execute(sql.SQL("SELECT st_geometrytype(geometry) FROM marxan.{feature_class_name} LIMIT 1;").format(feature_class_name=sql.Identifier(feature_class_name)), returnFormat="Array")
         return geometryType[0][0]
@@ -3269,7 +3285,7 @@ class MarxanSubprocess(Popen):
     Args:
         See https://docs.python.org/3/library/subprocess.html#popen-constructor
     Returns:
-        None  
+        None
     """
 
     def set_exit_callback_windows(self, callback, *args, **kwargs):
@@ -3278,7 +3294,7 @@ class MarxanSubprocess(Popen):
         Args:
             callback (function): The function that will be called when the process completes.
         Returns:
-            None  
+            None
         """
         # set a reference to the thread so we can free it when the process ends
         self._thread = Thread(target=self._poll_completion,
@@ -3290,7 +3306,7 @@ class MarxanSubprocess(Popen):
         Args:
             callback (function): The function that will be called when the process completes.
         Returns:
-            None  
+            None
         """
         # poll the process to see when it ends
         while self.poll() is None:
@@ -3309,12 +3325,12 @@ class MarxanRESTHandler(tornado.web.RequestHandler):
     """Base class to handle all HTTP requests. Handles authentication, authorisation, exception handling, writing headers and sending responses. All REST request handlers derive from this class.
 
     Attributes:
-        user: A string with the name of the user making the request (if the request.arguments contains a user key). 
-        folder_user: A string with the path to the users folder (if the request.arguments contains a user key).  
-        project: A string with the name of the project (if the request.arguments contains a project key).  
-        folder_project: A string with the path to the project folder (if the request.arguments contains a project key).  
-        folder_input: A string with the path to the projects input folder (if the request.arguments contains a project key).  
-        folder_output: A string with the path to the projects output folder (if the request.arguments contains a project key).  
+        user: A string with the name of the user making the request (if the request.arguments contains a user key).
+        folder_user: A string with the path to the users folder (if the request.arguments contains a user key).
+        project: A string with the name of the project (if the request.arguments contains a project key).
+        folder_project: A string with the path to the project folder (if the request.arguments contains a project key).
+        folder_input: A string with the path to the projects input folder (if the request.arguments contains a project key).
+        folder_output: A string with the path to the projects output folder (if the request.arguments contains a project key).
     """
 
     def set_default_headers(self):
@@ -3327,7 +3343,7 @@ class MarxanRESTHandler(tornado.web.RequestHandler):
         """Gets the current user.
 
         Args:
-            None  
+            None
         Returns:
             string: The name of the currently authenticated user.
         """
@@ -3344,6 +3360,9 @@ class MarxanRESTHandler(tornado.web.RequestHandler):
             # check the referer can call the REST end point from their domain
             _checkCORS(self)
 
+
+<< << << < HEAD
+
             # check the request is authenticated
             _authenticate(self)
 
@@ -3353,6 +3372,14 @@ class MarxanRESTHandler(tornado.web.RequestHandler):
             # check the user has access to the specific resource, i.e. the 'User' role cannot access projects from other users
             _authoriseUser(self)
 
+== == == =
+            # check the request is authenticated
+            _authenticate(self)
+            # check the users role has access to the requested service
+            _authoriseRole(self, method)
+            # check the user has access to the specific resource, i.e. the 'User' role cannot access projects from other users
+            _authoriseUser(self)
+>>>>>> > 18b1667449b3bacf4a0638323c5621c9784009c9
             # instantiate the response dictionary
             self.response = {}
         else:
@@ -4068,12 +4095,17 @@ class getUser(MarxanRESTHandler):
             role = self.userData["ROLE"]
             unauthorised = ROLE_UNAUTHORISED_METHODS[role]
             # set the response
+<<<<<<< HEAD
             self.send_response({
                 'info': "User data received",
                 "userData": self.userData,
                 "unauthorisedMethods": unauthorised,
                 'dismissedNotifications': ids
             })
+=======
+            self.send_response({'info': "User data received", "userData": self.userData,
+                                "unauthorisedMethods": unauthorised, 'dismissedNotifications': ids})
+>>>>>>> 18b1667449b3bacf4a0638323c5621c9784009c9
         except MarxanServicesError as e:
             _raiseError(self, e.args[0])
 
@@ -5402,7 +5434,6 @@ class createFeatureFromLinestring(MarxanRESTHandler):
                                 'id': id, 'feature_class_name': feature_class_name, 'uploadId': uploadId})
         except MarxanServicesError as e:
             _raiseError(self, e.args[0])
-
 # https://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/stopProcess?pid=m12345&callback=__jp5
 
 
@@ -7590,12 +7621,16 @@ class Application(tornado.web.Application):
 
 
         ]
+        print('EXPORT_FOLDER: ', EXPORT_FOLDER)
+        print('MARXAN_CLIENT_BUILD_FOLDER: ', MARXAN_CLIENT_BUILD_FOLDER)
         settings = dict(
+
             cookie_secret=COOKIE_RANDOM_VALUE,
             static_path=EXPORT_FOLDER,
             # to avoid clashes with the npm static build folder called 'static'
             static_url_prefix='/resources/'
         )
+        print('settings: ', settings)
         super(Application, self).__init__(handlers, **settings)
 
 
@@ -7619,6 +7654,7 @@ async def initialiseApp():
     root_logger.setLevel(LOGGING_LEVEL)
     # set your format for the streaming logger
     root_streamhandler = root_logger.handlers[0]
+    print('root_streamhandler: ', root_streamhandler)
     f1 = '%(color)s[%(levelname)1.1s %(asctime)s.%(msecs)03d]%(end_color)s '
     f2 = '%(message)s'
     root_streamhandler.setFormatter(LogFormatter(
@@ -7626,6 +7662,7 @@ async def initialiseApp():
     # google cloud logger if enabled
     if 'GOOGLE_APPLICATION_CREDENTIALS' in os.environ.keys():
         client = googlelogger.Client()
+        print('client: ', client)
         client.setup_logging()
         # override the handlers as Google Cloud Logging adds another stream handler which we dont need
         root_logger.handlers = root_logger.handlers[1:]
