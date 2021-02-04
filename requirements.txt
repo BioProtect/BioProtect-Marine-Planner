@@ -9,3 +9,8 @@ aiopg
 aiohttp
 requests
 google-cloud-logging 
+python-dotenv
+rasterio==1.1.5
+rtree
+geopandas
+openpyxl==3.0.6
