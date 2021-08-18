@@ -1,5 +1,5 @@
 # marxan-server
-Back end Marxan Server installation for running Marxan Web. See also [marxan-client](https://github.com/marxanweb/marxan-client).
+Back end Marxan Server installation for running Marxan Web. See also [marxan-client](https://gitlab.insight-centre.org/caltig/marxan-client).
 
 ## Architecture
 The following image shows the high level architecture of marxan-server. 
@@ -11,7 +11,7 @@ The following instructions describe how to install marxan-server on Ubuntu 18.04
 ### Clone the repo:  
 In the folder where you want to install marxan-server, type the following:
 ```
-git clone https://github.com/marxanweb/marxan-server.git
+git clone https://gitlab.insight-centre.org/caltig/marxan-client.git
 ```
 ### Install marxan-server:
 ```
