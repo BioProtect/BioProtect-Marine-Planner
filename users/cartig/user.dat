@@ -1,12 +1,25 @@
   
+<<<<<<< HEAD
 LASTPROJECT Tonga
 SHOWPOPUP false
 NAME carlos tighe
 EMAIL carlos.tighe@insight-centre.org
 PASSWORD marineplanning
+=======
+LASTPROJECT Atlas case study example
+SHOWPOPUP false
+NAME carlos tighe
+EMAIL carlos.tighe@insight-centre.org
+PASSWORD carlos
+>>>>>>> 393fccd (trying to get file size down by removing git folder and reiniting)
 BASEMAP Light
 ROLE Admin
 CREATEDATE 13/01/20 16:29:42
 USEFEATURECOLORS true
+<<<<<<< HEAD
 SHOWWELCOMESCREEN false
 REPORTUNITS Km2
+=======
+SHOWWELCOMESCREEN true
+REPORTUNITS Km2
+>>>>>>> 393fccd (trying to get file size down by removing git folder and reiniting)
