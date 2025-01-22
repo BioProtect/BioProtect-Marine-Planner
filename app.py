@@ -60,22 +60,17 @@ from services.file_service import (add_parameter_to_file,
                                    get_output_filename, read_file, unzip_file,
                                    unzip_shapefile, update_file_parameters,
                                    write_df_to_file, write_to_file, zip_folder)
-from services.project_service import (clone_project, create_project,
-                                      delete_project, get_project_data,
-                                      get_projects,
+from services.project_service import (get_project_data,
                                       get_projects_for_feature,
-                                      get_projects_for_user,
                                       get_safe_project_name, set_folder_paths,
                                       write_csv)
 from services.run_command_service import run_command
 from services.service_error import ServicesError, raise_error
-from services.user_service import (create_user, dismiss_notification,
-                                   get_notifications_data, get_user_data,
-                                   get_users, get_users_data,
-                                   reset_notifications)
+from services.user_service import (dismiss_notification, get_notifications_data, get_users, reset_notifications)
 from handlers.base_handler import BaseHandler
-from server.handlers.Old_user_handler import UserHandler
+from handlers.user_handler import UserHandler
 from handlers.project_handler import ProjectHandler
+from handlers.feature_handler import FeatureHandler
 from sqlalchemy import create_engine, exc
 from tornado import concurrent, gen, httpclient, queues
 from tornado.ioloop import IOLoop, PeriodicCallback
@@ -98,12 +93,11 @@ from datetime import datetime, timezone, timedelta
 ####################################################################################################################################################################################################################################################################
 
 # SECURITY SETTINGS
-PERMITTED_METHODS = ["getServerData", "createUser", "validateUser",
-                     "resendPassword", "testTornado", "getProjectsWithGrids", "getAtlasLayers"]
+PERMITTED_METHODS = ["getServerData", "testTornado", "getProjectsWithGrids", "getAtlasLayers"]
 """REST services that do not need authentication/authorisation."""
 ROLE_UNAUTHORISED_METHODS = {
-    "ReadOnly": ["createProject", "upgradeProject", "getCountries", "deletePlanningUnitGrid", "createPlanningUnitGrid", "uploadTilesetToMapBox", "uploadFileToFolder", "uploadFile", "importPlanningUnitGrid", "createFeaturePreprocessingFileFromImport", "createUser", "getUsers", "updateUserParameters", "getFeature", "importFeatures", "getPlanningUnitsData", "updatePUFile", "getSpeciesData", "getSpeciesPreProcessingData", "updateSpecFile", "getProtectedAreaIntersectionsData", "getMarxanLog", "getBestSolution", "getOutputSummary", "getSummedSolution", "getMissingValues", "PreprocessFeature", "preprocessPlanningUnits", "preprocessProtectedAreas", "runMarxan", "stopProcess", "testRoleAuthorisation", "deleteFeature", "deleteUser", "getRunLogs", "clearRunLogs", "updateWDPA", "unzipShapefile", "getShapefileFieldnames", "CreateFeatureFromLinestring", "runGapAnalysis", "importGBIFData", "deleteGapAnalysis", "shutdown", "addParameter", "block", "resetDatabase", "cleanup", "exportProject", "importProject", 'getCosts', 'updateCosts', 'deleteCost', 'runSQLFile', 'exportPlanningUnitGrid', 'exportFeature'],
-    "User": ["testRoleAuthorisation", "deleteFeature", "getUsers", "deleteUser", "clearRunLogs", "updateWDPA", "shutdown", "addParameter", "block", "resetDatabase", "cleanup", 'runSQLFile'],
+    "ReadOnly": ["createProject", "upgradeProject", "getCountries", "deletePlanningUnitGrid", "createPlanningUnitGrid", "uploadTilesetToMapBox", "uploadFileToFolder", "uploadFile", "importPlanningUnitGrid", "createFeaturePreprocessingFileFromImport", "getFeature", "importFeatures", "getPlanningUnitsData", "updatePUFile", "getSpeciesData", "getSpeciesPreProcessingData", "updateSpecFile", "getProtectedAreaIntersectionsData", "getMarxanLog", "getBestSolution", "getOutputSummary", "getSummedSolution", "getMissingValues", "PreprocessFeature", "preprocessPlanningUnits", "preprocessProtectedAreas", "runMarxan", "stopProcess", "testRoleAuthorisation", "deleteFeature", "getRunLogs", "clearRunLogs", "updateWDPA", "unzipShapefile", "getShapefileFieldnames", "CreateFeatureFromLinestring", "runGapAnalysis", "importGBIFData", "deleteGapAnalysis", "shutdown", "addParameter", "block", "resetDatabase", "cleanup", "exportProject", "importProject", 'getCosts', 'updateCosts', 'deleteCost', 'runSQLFile', 'exportPlanningUnitGrid', 'exportFeature'],
+    "User": ["testRoleAuthorisation", "deleteFeature", "clearRunLogs", "updateWDPA", "shutdown", "addParameter", "block", "resetDatabase", "cleanup", 'runSQLFile'],
     "Admin": []
 }
 """Dict that controls access to REST services using role-based authentication. Add REST services that you want to lock down to specific roles - a class added to an array will make that method unavailable for that role"""
@@ -152,7 +146,7 @@ LOGGING_LEVEL = logging.INFO
 
 # pdoc3 dict to whitelist private members for the documentation
 __pdoc__ = {}
-privateMembers = ['getGeometryType', 'add_parameter_to_file', 'check_zipped_shapefile', 'cleanup', 'clone_project', 'create_project', 'create_user', 'create_zipfile', 'delete_all_files', 'delete_archive_files', '_deleteFeature',  'delete_project', 'delete_records_in_text_file', 'del_tileset', 'delete_zipped_shapefile', 'dismiss_notification',  'finish_feature_import', '_getAllProjects', 'get_dict_value', 'get_files_in_folder_recursive',   'get_key_value', 'get_key_values_from_file', 'get_keys', 'get_marxan_log', 'get_notifications_data', 'get_output_filename', 'get_pu_grids','get_project_data', 'get_projects_for_feature', 'get_projects_for_planning_grid', 'get_projects_for_user', 'get_run_logs', 'get_safe_project_name', 'get_species_data', 'get_unique_feature_name', 'get_user_data', 'get_users', 'get_users_data', 'normalize_dataframe', 'pad_dict', '_preprocessProtectedAreas', 'puid_array_to_df', 'raise_error', 'read_file', '_reprocessProtectedAreas', 'reset_notifications', 'run_command', '_setCORS', 'set_folder_paths', 'set_global_vars', 'unzip_file', 'unzip_shapefile', 'update_dataframe', 'update_file_parameters', 'update_run_log', 'update_species_file', '_uploadTileset', 'upload_tileset_to_mapbox', 'validate_args', 'write_csv', 'write_to_file', 'write_df_to_file', 'zip_folder']
+privateMembers = ['getGeometryType', 'add_parameter_to_file', 'check_zipped_shapefile', 'cleanup', 'clone_project', 'create_user', 'create_zipfile', 'delete_all_files', 'delete_archive_files', '_deleteFeature',  'delete_records_in_text_file', 'del_tileset', 'delete_zipped_shapefile', 'dismiss_notification',  'finish_feature_import', '_getAllProjects', 'get_dict_value', 'get_files_in_folder_recursive',   'get_key_value', 'get_key_values_from_file', 'get_keys', 'get_marxan_log', 'get_notifications_data', 'get_output_filename', 'get_pu_grids','get_project_data', 'get_projects_for_feature', 'get_projects_for_planning_grid', 'get_projects_for_user', 'get_run_logs', 'get_safe_project_name', 'get_species_data', 'get_unique_feature_name', 'get_user_data', 'get_users', 'get_users_data', 'normalize_dataframe', 'pad_dict', '_preprocessProtectedAreas', 'puid_array_to_df', 'raise_error', 'read_file', '_reprocessProtectedAreas', 'reset_notifications', 'run_command', '_setCORS', 'set_folder_paths', 'set_global_vars', 'unzip_file', 'unzip_shapefile', 'update_dataframe', 'update_file_parameters', 'update_run_log', 'update_species_file', '_uploadTileset', 'upload_tileset_to_mapbox', 'validate_args', 'write_csv', 'write_to_file', 'write_df_to_file', 'zip_folder']
 
 for m in privateMembers:
     __pdoc__[m] = True
@@ -1130,43 +1124,6 @@ class AuthHandler(BaseHandler):
         # end try
 
 
-class createUser(BaseHandler):
-    """REST HTTP handler. Creates a new user. The required arguments in the request.arguments parameter are:
-
-    Args:
-        user (string): The name of the user to create.
-        password (string): The password for the user. CAUTION: The password will be stored in plain text in the user.dat file.
-        fullname (string): The full name of the user.
-        email (string): The email for the user.
-    Returns:
-        A dict with the following structure (if the class raises an exception, the error message is included in an 'error' key/value pair):
-
-        {
-            "info": Informational message
-        }
-    """
-
-    def post(self):
-        try:
-            # validate the input arguments
-            validate_args(self.request.arguments, [
-                "user", "password", "fullname", "email"])
-            # create the user
-            create_user(self, self.get_argument('user'), self.get_argument(
-                'fullname'), self.get_argument('email'), self.get_argument('password'), project_paths.USERS_FOLDER)
-            # copy each case study into the users folder
-            folders = glob.glob(project_paths.CASE_STUDIES_FOLDER + "*/")
-            # iterate through the case studies
-            for folder in folders:
-                clone_project(folder, project_paths.USERS_FOLDER +
-                              self.get_argument('user') + os.sep)
-            # set the response
-            self.send_response(
-                {'info': "User '" + self.get_argument('user') + "' created"})
-        except ServicesError as e:
-            raise_error(self, e.args[0])
-
-
 class getCountries(BaseHandler):
     """REST HTTP handler. Gets a list of countries. The required arguments in the request.arguments parameter are:
 
@@ -1428,196 +1385,6 @@ class DeletePlanningUnitGrid(BaseHandler):
 
             # set the response
             self.send_response({'info': 'Planning grid deleted'})
-        except ServicesError as e:
-            raise_error(self, e.args[0])
-
-
-
-class validateUser(BaseHandler):
-    """REST HTTP handler. Validates a user with the passed credentials. The required arguments in the request.arguments parameter are:
-
-    Args:
-        user (string): The name of the user.
-        password (string): The password for the user.
-    Returns:
-        A dict with the following structure (if the class raises an exception, the error message is included in an 'error' key/value pair):
-
-        {
-            "info": Informational message
-        }
-    Raises:
-        ServicesError: If the user is not found or the credentials are incorrect.
-    """
-
-    def get(self):
-        try:
-            # validate the input arguments
-            validate_args(self.request.arguments, ['user', 'password'])
-
-            # get the user data from the user.dat file
-            get_user_data(self, True)
-            # compare the passed password to the one in the user.dat file
-            if self.get_argument("password") == self.userData["PASSWORD"]:
-                # if the request is secure, then set the secure response header for the cookie
-                secure = True if (
-                    self.request.protocol == 'https' or
-                    self.request.host == '61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081' or
-                    'localhost' in self.request.host) else False
-                # # set a response cookie for the authenticated user
-                # self.set_secure_cookie("user", self.get_argument(
-                #     "user"), httponly=True, samesite=None, secure=secure)
-                # log(self.get_secure_cookie("user"), Fore.RED)
-                # # set a response cookie for the authenticated users role
-                # self.set_secure_cookie("role",
-                #                        self.userData["ROLE"],
-                #                        httponly=True,
-                #                        samesite=None,
-                #                        secure=secure)
-                # set a response cookie for the authenticated user
-                self.set_secure_cookie("user", self.get_argument("user"))
-                log(self.get_secure_cookie("user"), Fore.RED)
-                # set a response cookie for the authenticated users role
-                self.set_secure_cookie("role", self.userData["ROLE"])
-                # set the response
-                self.send_response({
-                    'validated': True,
-                    'info': "User " + self.user + " validated"
-                })
-            else:
-                # invalid login
-                raise ServicesError("Invalid user/password")
-        except ServicesError as e:
-            raise_error(self, "Login failed: " + e.args[0])
-
-
-
-class logout(BaseHandler):
-    """REST HTTP handler. Logs the user out and resets the cookies. The required arguments in the request.arguments parameter are:
-
-    Args:
-        None
-    Returns:
-        A dict with the following structure (if the class raises an exception, the error message is included in an 'error' key/value pair):
-
-        {
-            "info": Informational message
-        }
-    """
-
-    def get(self):
-        try:
-            self.clear_cookie("user")
-            self.clear_cookie("role")
-            # set the response
-            self.send_response({'info': "User logged out"})
-        except ServicesError as e:
-            raise_error(self, e.args[0])
-
-
-class resendPassword(BaseHandler):
-    """REST HTTP handler. Resends the password to the passed email address (not currently implemented). The required arguments in the request.arguments parameter are:
-
-    Args:
-        None
-    Returns:
-        A dict with the following structure (if the class raises an exception, the error message is included in an 'error' key/value pair):
-
-        {
-            "info": Informational message
-        }
-    """
-
-    def get(self):
-        # set the response
-        self.send_response({'info': 'Not currently implemented'})
-
-
-
-class getUser(BaseHandler):
-    """REST HTTP handler. Gets a users information from the user.dat file. The required arguments in the request.arguments parameter are:
-
-    Args:
-        user (string): The name of the user.
-    Returns:
-        A dict with the following structure (if the class raises an exception, the error message is included in an 'error' key/value pair):
-
-        {
-            "info": Informational message,
-            "userData": dict: The users data. The dict contains the keys: LASTPROJECT,SHOWPOPUP,NAME,EMAIL,BASEMAP,ROLE,CREATEDATE,USEFEATURECOLORS,SHOWWELCOMESCREEN,REdb_config.PORTUNITS,unauthorisedMethods,dismissedNotifications
-        }
-    """
-
-    def get(self):
-        try:
-            # validate the input arguments
-            validate_args(self.request.arguments, ['user'])
-            # get the user data from the user.dat file
-            get_user_data(self)
-            # get the notifications data from the notifications.dat file
-            ids = get_notifications_data(self)
-            # get the permissions for the users role
-            role = self.userData["ROLE"]
-            unauthorised = ROLE_UNAUTHORISED_METHODS[role]
-            # set the response
-            self.send_response({
-                'info': "User data received",
-                "userData": self.userData,
-                "unauthorisedMethods": unauthorised,
-                'dismissedNotifications': ids
-            })
-        except ServicesError as e:
-            raise_error(self, e.args[0])
-
-
-
-class getUsers(BaseHandler):
-    """REST HTTP handler. Gets a list of all users and their data. The required arguments in the request.arguments parameter are:
-
-    Args:
-        None
-    Returns:
-        A dict with the following structure (if the class raises an exception, the error message is included in an 'error' key/value pair):
-
-        {
-            "info": Informational message,
-            "users": dict[]: A list of the users data. Each dict contains the keys: LASTPROJECT,SHOWPOPUP,NAME,EMAIL,BASEMAP,ROLE,CREATEDATE,USEFEATURECOLORS,SHOWWELCOMESCREEN,REdb_config.PORTUNITS,user
-        }
-    """
-
-    def get(self):
-        try:
-            # get the users
-            users = get_users()
-            # get all the data for those users
-            usersData = get_users_data(users)
-            # set the response
-            self.send_response(
-                {'info': 'Users data received', 'users': usersData})
-        except ServicesError as e:
-            raise_error(self, e.args[0])
-
-
-
-class deleteUser(BaseHandler):
-    """REST HTTP handler. Deletes a user. The required arguments in the request.arguments parameter are:
-
-    Args:
-        user (string): The name of the user to delete.
-    Returns:
-        A dict with the following structure (if the class raises an exception, the error message is included in an 'error' key/value pair):
-
-        {
-            "info": Informational message
-        }
-    """
-
-    def get(self):
-        try:
-            # validate the input arguments
-            validate_args(self.request.arguments, ['user'])
-            shutil.rmtree(self.folder_user)
-            # set the response
-            self.send_response({'info': 'User deleted'})
         except ServicesError as e:
             raise_error(self, e.args[0])
 
@@ -2621,39 +2388,6 @@ class addParameter(BaseHandler):
             raise_error(self, e.args[0])
 
 
-class updateUserParameters(BaseHandler):
-    """REST HTTP handler. Updates parameters in the users user.dat file using the passed arguments as key/value pairs. The required arguments in the request.arguments parameter are:
-
-    Args:
-        user (string): The name of the user.
-    Returns:
-        A dict with the following structure (if the class raises an exception, the error message is included in an 'error' key/value pair):
-
-        {
-            "info": Informational message
-        }
-    """
-
-    def post(self):
-        try:
-            # validate the input arguments
-            validate_args(self.request.arguments, ['user'])
-            # get the parameters to update as a simple dict
-            params = {
-                argument: self.get_argument(argument)
-                for argument in self.request.arguments
-                if argument not in ['user', 'callback']
-            }
-            # update the parameters
-            update_file_parameters(
-                self.folder_user + "user.dat", params)
-            # set the response
-            self.send_response(
-                {'info': ",".join(list(params.keys())) + " parameters updated"})
-        except ServicesError as e:
-            raise_error(self, e.args[0])
-
-
 class listProjectsForFeature(BaseHandler):
     """REST HTTP handler. Gets a list of all of the projects that a feature is in. The required arguments in the request.arguments parameter are:
 
@@ -2929,6 +2663,10 @@ class deleteFeature(BaseHandler):
             # Delete the Mapbox tileset
             try:
                 del_tileset(feature_class_name)
+                response = requests.delete(f"https://api.mapbox.com/tilesets/v1/{MAPBOX_USER}.{feature_class_name}?access_token={project_paths.MBAT}")
+                if response.status_code != 204:
+                    raise ServicesError(f"Failed to delete tileset. "f"Response: {response.status_code} - {response.text}")
+                
             except ServicesError as e:
                 print(f"Warning: Unable to delete tileset for feature '{feature_class_name}': {e}")
                     
@@ -5684,16 +5422,18 @@ class Application(tornado.web.Application):
 
         return [
             ("/server/auth", AuthHandler),
-
             ("/server/block", block),
-            
             (r"/server/projects", ProjectHandler, dict(pg=pg, 
                                     proj_paths=project_paths, 
                                     get_species_data=get_species_data, 
                                     update_species=update_species_file)),
             ("/server/exportProject", exportProject),
             ("/server/importProject", ImportProject),
-
+            (r"/server/users", UserHandler, dict(pg=pg, 
+                                                 proj_paths=project_paths)),
+            (r"/server/features", FeatureHandler, dict(pg=pg, 
+                                                       finish_feature_import=finish_feature_import, 
+                                                       upload_tileset_to_mapbox=upload_tileset_to_mapbox))
 
             
 
@@ -5712,15 +5452,8 @@ class Application(tornado.web.Application):
              CreateFeatureFromLinestring, dict(pg=pg)),
             ("/server/createFeaturesFromWFS", createFeaturesFromWFS),
             ("/server/getFeaturePlanningUnits", getFeaturePlanningUnits),
-            
-            ("/server/createUser", createUser),
-            ("/server/deleteUser", deleteUser),
-            ("/server/getUser", getUser),
-            ("/server/getUsers", getUsers),
-            ("/server/validateUser", validateUser),
-            ("/server/logout", logout),
-            ("/server/resendPassword", resendPassword),           
-            ("/server/updateUserParameters", updateUserParameters),
+            ("/server/listProjectsForFeature", listProjectsForFeature),
+
        
 
             ("/server/deleteShapefile", deleteShapefile),
@@ -5740,7 +5473,6 @@ class Application(tornado.web.Application):
             ("/server/getCountries", getCountries),
 
 
-            ("/server/listProjectsForFeature", listProjectsForFeature),
             ("/server/listProjectsForPlanningGrid",
              listProjectsForPlanningGrid),
 
@@ -5752,30 +5484,23 @@ class Application(tornado.web.Application):
 
 
 
-            ("/server/getPlanningUnitsData",
-             getPlanningUnitsData),  # currently not used
+            ("/server/getPlanningUnitsData", getPlanningUnitsData),  # currently not used
             ("/server/getPlanningUnitsCostData", getPlanningUnitsCostData),
             ("/server/updatePUFile", UpdatePUFile),
             ("/server/getPUData", getPUData),
             ("/server/getSpeciesData", getSpeciesData),  # currently not used
             ("/server/getAllSpeciesData", getAllSpeciesData),
-            ("/server/getSpeciesPreProcessingData",
-             getSpeciesPreProcessingData),  # currently not used
+            ("/server/getSpeciesPreProcessingData", getSpeciesPreProcessingData),  # currently not used
             ("/server/updateSpecFile", updateSpecFile),
-            ("/server/getProtectedAreaIntersectionsData",
-             getProtectedAreaIntersectionsData),  # currently not used
+            ("/server/getProtectedAreaIntersectionsData", getProtectedAreaIntersectionsData),  # currently not used
             # currently not used - bugs in the Marxan output log
             ("/server/getMarxanLog", getMarxanLog),
-            ("/server/getBestSolution",
-             getBestSolution),  # currently not used
-            ("/server/getOutputSummary",
-             getOutputSummary),  # currently not used
-            ("/server/getSummedSolution",
-             getSummedSolution),  # currently not used
+            ("/server/getBestSolution", getBestSolution),  # currently not used
+            ("/server/getOutputSummary", getOutputSummary),  # currently not used
+            ("/server/getSummedSolution", getSummedSolution),  # currently not used
             ("/server/getResults", getResults),
             ("/server/getSolution", getSolution),
-            ("/server/getMissingValues",
-             getMissingValues),  # currently not used
+            ("/server/getMissingValues", getMissingValues),  # currently not used
             ("/server/preprocessFeature", PreprocessFeature),
             ("/server/preprocessPlanningUnits", preprocessPlanningUnits),
             ("/server/processProtectedAreas", ProcessProtectedAreas),

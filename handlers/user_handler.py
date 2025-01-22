@@ -1,13 +1,20 @@
 import glob
-from os.path import join, normpath, basename
+import json
 import shutil
-from services.service_error import ServicesError, raise_error
-from services.file_service import get_notifications_data, update_file_parameters, get_key_values_from_file
-from services.project_service import clone_a_project
-from psycopg2 import sql
+from os.path import basename, join, normpath
+from types import SimpleNamespace
+
+from asyncpg.exceptions import UniqueViolationError
 from handlers.base_handler import BaseHandler
 from passlib.hash import bcrypt
-from types import SimpleNamespace
+from psycopg2 import sql
+from services.file_service import (get_key_values_from_file,
+                                   get_notifications_data,
+                                   update_file_parameters)
+from services.project_service import clone_a_project
+from services.service_error import ServicesError, raise_error
+
+# JWT utility for generating tokens
 
 
 class UserHandler(BaseHandler):
@@ -15,6 +22,10 @@ class UserHandler(BaseHandler):
     REST HTTP handler for user-related operations, including creation, validation, deletion,
     updating parameters, and retrieving user data.
     """
+
+    def initialize(self, pg, proj_paths):
+        self.pg = pg
+        self.proj_paths = proj_paths
 
     def validate_args(self, arguments, required_arguments):
         """
@@ -33,7 +44,7 @@ class UserHandler(BaseHandler):
         missing_arguments = [
             arg for arg in required_arguments if arg not in arguments]
         if missing_arguments:
-            raise ServicesError(f"Missing input arguments: {
+            raise ServicesError(f"Missing arguments: {
                                 ', '.join(missing_arguments)}")
 
     async def get(self):
@@ -221,3 +232,95 @@ class UserHandler(BaseHandler):
         self.send_response({
             'info': ", ".join(params.keys()) + " parameters updated"
         })
+
+    # NOT YET IMPLEMENTED *************************************************
+
+    async def get_user_by_id(self, user_id=None):
+        """
+        Retrieve a single user by ID or all users if no ID is provided.
+        """
+        query = """
+        SELECT id, username, last_project, show_popup, basemap, role, use_feature_colours, report_units, refresh_tokens
+        """
+        try:
+            user_id = int(user_id)
+        except ValueError:
+            self.set_status(400)
+            self.write(json.dumps({"error": "Invalid user ID"}))
+            return
+
+        if user_id:
+            query = query + "FROM users WHERE id = $1"
+            result = await self.pg.execute(query, data=[user_id], return_format="Dict")
+            if not result:
+                self.set_status(404)
+                self.write({"message": "User not found"})
+                return
+
+            response = json.dumps(result[0])
+            callback = self.get_argument("callback", None)
+            if callback:
+                self.write(f"{callback}({response})")
+            else:
+                self.write(response)
+        else:
+            users = await self.pg.execute(query, return_format="Array")
+            self.write(json.dumps({"users": users}))
+
+    # NOT YET IMPLEMENTED *************************************************
+    async def update_user(self, user_id):
+        """
+        Update an existing user.
+        """
+        try:
+            body = json.loads(self.request.body)
+            updates = []
+            params = []
+            index = 1
+
+            for field in ["username", "email", "password", "role"]:
+                value = body.get(field)
+                if value:
+                    if field == "password":
+                        value = bcrypt.hash(value)
+                    updates.append(f"{field} = ${index}")
+                    params.append(value)
+                    index += 1
+
+            if not updates:
+                self.set_status(400)
+                self.write({"message": "No fields to update"})
+                return
+
+            params.append(user_id)
+            query = f"UPDATE users SET {
+                ', '.join(updates)} WHERE id = ${index}"
+            result = await self.pg.execute(query, *params)
+            if result == "UPDATE 0":
+                self.set_status(404)
+                self.write({"message": "User not found"})
+            else:
+                self.write({"message": "User updated"})
+
+        except Exception as e:
+            self.set_status(500)
+            self.write({"message": "Error updating user", "error": str(e)})
+
+    # NOT YET IMPLEMENTED *************************************************
+
+    async def delete_user_by_id(self, user_id):
+        """
+        Delete a user.
+        """
+        try:
+            query = "DELETE FROM users WHERE id = $1"
+            result = await self.pg.execute(query, int(user_id))
+            if result == "DELETE 0":
+                self.set_status(404)
+                self.write({"message": "User not found"})
+            else:
+                self.write({"message": "User deleted"})
+
+        except Exception as e:
+            self.set_status(500)
+            self.write({"message": "Error deleting user", "error": str(e)})

@@ -1,7 +1,7 @@
 import datetime
 import glob
 import shutil
-from os import path, sep
+from os import path, sep, walk
 
 import pandas as pd
 from classes.folder_path_config import get_folder_path_config
@@ -370,31 +370,37 @@ def get_projects_for_feature(feature_id, user_folder):
     Returns:
         list[dict]: A list of projects where the feature is used, each containing 'user' and 'name'.
     """
-    spec_dat_files = _getFilesInFolderRecursive(user_folder, "spec.dat")
     projects = []
+
+    spec_dat_files = [path.join(root, f) for root, _, files in walk(
+        user_folder) for f in files if f == "spec.dat"]
 
     for spec_file in spec_dat_files:
         # Load the CSV file into a dataframe
-        df = pd.read_csv(spec_file, sep=None, engine='python') if path.exists(
-            spec_file) else pd.DataFrame()
+        if path.exists(spec_file):
+            df = pd.read_csv(spec_file, sep=None, engine='python')
+        else:
+            continue
 
         # Check if the feature_id exists in the 'id' column of the dataframe
-        if _dataFrameContainsValue(df, 'id', feature_id):
-            # Get the project folder paths based on file location
-            prj_paths = spec_file[len(user_folder):].split(sep)
+        if not feature_id in df['id'].values:
+            continue
 
-            # Check if it's a valid project (not an imported one)
-            prj_folder = path.join(user_folder, prj_paths[0], prj_paths[1])
+        # Extract project folder paths based on the file's location
+        relative_path = path.relpath(spec_file, user_folder)
+        prj_paths = relative_path.split(sep)
 
-            # Get the key-values from the input.dat file for this project
-            values = get_key_values_from_file(
-                path.join(prj_folder, "input.dat"))
+        if len(prj_paths) < 2:
+            continue  # Skip invalid paths
 
-            # Check if 'OLDVERSION' exists and is not set to True (i.e., it's not an old version)
-            if values.get('OLDVERSION', False) is False:
-                projects.append({
-                    'user': prj_paths[0],
-                    'name': prj_paths[1]
-                })
+        # Construct the project folder path
+        prj_folder = path.join(user_folder, prj_paths[0], prj_paths[1])
+        input_dat_path = path.join(prj_folder, "input.dat")
+        values = get_key_values_from_file(input_dat_path)
+
+        projects.append({
+            'user': prj_paths[0],
+            'name': prj_paths[1]
+        })
 
     return projects
