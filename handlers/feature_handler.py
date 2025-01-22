@@ -1,14 +1,14 @@
 import os
+import uuid
+
 import pandas as pd
 import requests
+from handlers.base_handler import BaseHandler
 from psycopg2 import sql
-from services.file_service import (
-    file_data_to_df, get_key_values_from_file, write_to_file)
+from services.file_service import (create_zipfile, file_data_to_df,
+                                   get_key_values_from_file, write_to_file)
 from services.project_service import get_projects_for_feature
 from services.service_error import ServicesError, raise_error
-from services.file_service import create_zipfile
-from handlers.base_handler import BaseHandler
-import uuid
 
 
 class FeatureHandler(BaseHandler):

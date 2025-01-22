@@ -71,6 +71,7 @@ from handlers.base_handler import BaseHandler
 from handlers.user_handler import UserHandler
 from handlers.project_handler import ProjectHandler
 from handlers.feature_handler import FeatureHandler
+from handlers.websocket_handler import WebSocketHandler
 from sqlalchemy import create_engine, exc
 from tornado import concurrent, gen, httpclient, queues
 from tornado.ioloop import IOLoop, PeriodicCallback
@@ -96,8 +97,8 @@ from datetime import datetime, timezone, timedelta
 PERMITTED_METHODS = ["getServerData", "testTornado", "getProjectsWithGrids", "getAtlasLayers"]
 """REST services that do not need authentication/authorisation."""
 ROLE_UNAUTHORISED_METHODS = {
-    "ReadOnly": ["createProject", "upgradeProject", "getCountries", "deletePlanningUnitGrid", "createPlanningUnitGrid", "uploadTilesetToMapBox", "uploadFileToFolder", "uploadFile", "importPlanningUnitGrid", "createFeaturePreprocessingFileFromImport", "getFeature", "importFeatures", "getPlanningUnitsData", "updatePUFile", "getSpeciesData", "getSpeciesPreProcessingData", "updateSpecFile", "getProtectedAreaIntersectionsData", "getMarxanLog", "getBestSolution", "getOutputSummary", "getSummedSolution", "getMissingValues", "PreprocessFeature", "preprocessPlanningUnits", "preprocessProtectedAreas", "runMarxan", "stopProcess", "testRoleAuthorisation", "deleteFeature", "getRunLogs", "clearRunLogs", "updateWDPA", "unzipShapefile", "getShapefileFieldnames", "CreateFeatureFromLinestring", "runGapAnalysis", "importGBIFData", "deleteGapAnalysis", "shutdown", "addParameter", "block", "resetDatabase", "cleanup", "exportProject", "importProject", 'getCosts', 'updateCosts', 'deleteCost', 'runSQLFile', 'exportPlanningUnitGrid', 'exportFeature'],
-    "User": ["testRoleAuthorisation", "deleteFeature", "clearRunLogs", "updateWDPA", "shutdown", "addParameter", "block", "resetDatabase", "cleanup", 'runSQLFile'],
+    "ReadOnly": ["createProject", "upgradeProject", "getCountries", "deletePlanningUnitGrid", "createPlanningUnitGrid", "uploadTilesetToMapBox", "uploadFileToFolder", "uploadFile", "importPlanningUnitGrid", "createFeaturePreprocessingFileFromImport", "getFeature", "importFeatures", "getPlanningUnitsData", "updatePUFile", "getSpeciesData", "getSpeciesPreProcessingData", "updateSpecFile", "getProtectedAreaIntersectionsData", "getMarxanLog", "getBestSolution", "getOutputSummary", "getSummedSolution", "getMissingValues", "PreprocessFeature", "preprocessPlanningUnits", "preprocessProtectedAreas", "runMarxan", "stopProcess", "testRoleAuthorisation", "deleteFeature", "getRunLogs", "clearRunLogs", "updateWDPA", "unzipShapefile", "getShapefileFieldnames", "CreateFeatureFromLinestring", "runGapAnalysis", "importGBIFData", "deleteGapAnalysis", "shutdown", "addParameter", "resetDatabase", "cleanup", "exportProject", "importProject", 'getCosts', 'updateCosts', 'deleteCost', 'runSQLFile', 'exportPlanningUnitGrid', 'exportFeature'],
+    "User": ["testRoleAuthorisation", "deleteFeature", "clearRunLogs", "updateWDPA", "shutdown", "addParameter", "resetDatabase", "cleanup", 'runSQLFile'],
     "Admin": []
 }
 """Dict that controls access to REST services using role-based authentication. Add REST services that you want to lock down to specific roles - a class added to an array will make that method unavailable for that role"""
@@ -3042,28 +3043,6 @@ class shutdown(BaseHandler):
             raise_error(self, e.args[0])
 
 
-class block(BaseHandler):
-    """REST HTTP handler. Blocks tornado for the passed number of seconds - for testing only. The required arguments in the request.arguments parameter are:
-
-    Args:
-        seconds (string): The number of seconds to block for.
-    Returns:
-        A dict with the following structure (if the class raises an exception, the error message is included in an 'error' key/value pair):
-
-        {
-            "info": Informational message
-        }
-    """
-
-    def get(self):
-        try:
-            validate_args(self.request.arguments, ['seconds'])
-            time.sleep(int(self.get_argument("seconds")))
-            self.send_response({'info': "Blocking finished"})
-        except ServicesError as e:
-            raise_error(self, e.args[0])
-
-
 class testTornado(BaseHandler):
     """REST HTTP handler. Tests tornado is working properly. The required arguments in the request.arguments parameter are:
 
@@ -3081,217 +3060,10 @@ class testTornado(BaseHandler):
         self.send_response({'info': "Tornado running"})
 
 ####################################################################################################################################################################################################################################################################
-# baseclass for handling WebSockets
+# WebSocketHandler subclasses
 ####################################################################################################################################################################################################################################################################
 
-
-class MarxanWebSocketHandler(tornado.websocket.WebSocketHandler):
-    """Base class for handling WebSockets. Handles authentication, authorisation, CORS, writing responses and keeping the WebSocket alive with pings.
-
-    Attributes:
-        Same as BaseHandler - See ``BaseHandler``
-    """
-
-    def get_current_user(self):
-        """Gets the currently authenticated user.
-
-        Args:
-            None
-        Returns:
-            string: The name of the currently authenticated user.
-        """
-        if self.get_secure_cookie("user"):
-            returnVal = self.get_secure_cookie("user").decode("utf-8")
-        else:
-            returnVal = None
-        return returnVal
-
-    def check_origin(self, origin):
-        """Checks CORS access for the websocket.
-
-        Args:
-            origin (string): The origin domain for the WebSocket request.
-        Returns:
-            bool: True if the origin is allowed to access the resource or if security is disabled.
-        Raises:
-            ServicesError: If the calling origin does not have permission to access the resource.
-        """
-        if project_paths.DISABLE_SECURITY:
-            return True
-        # the request is valid for CORS if the origin is in the list of permitted domains, or the origin is the same as the host, i.e. same machine
-        # we need to get the host_name from the origin so parse it with urlparse
-        parsed = urlparse(origin)
-        if (origin in project_paths.PERMITTED_DOMAINS) or (parsed.netloc.find(self.request.host_name) != -1):
-            return True
-        else:
-            raise HTTPError(403, "The origin '" + origin +
-                            "' does not have permission to access the service (CORS error)")
-
-    async def open(self, startMessage):
-        """Called when the websocket is opened - does authentication/authorisation, gets the folder paths for the user (and optionally the project) and starts the keep alive ping.
-
-        Args:
-            startMessage (dict): A start message to send back to the client when the WebSocket is opened. Called from descendent classes.
-        Returns:
-            None
-        Raises:
-            ServicesError: If the request is not authenticated or authorised.
-        """
-        try:
-            # set the start time of the websocket
-            self.startTime = datetime.datetime.now()
-            # set the start message
-            startMessage.update({'status': 'Started'})
-            self.send_response(startMessage)
-            # set the folder paths for the user and optionally project
-            if "user" in self.request.arguments.keys():
-                set_folder_paths(self,
-                                 self.request.arguments,
-                                 project_paths.USERS_FOLDER)
-                # get the project data
-                if hasattr(self, 'folder_project'):
-                    await get_project_data(pg, self)
-                    
-            # check the request is authenticated
-            if project_paths.DISABLE_SECURITY:
-                return
-            if not self.current_user:
-                raise HTTPError(401, NOT_AUTHENTICATED_ERROR)
-            # get the requested method
-            method = self.request.path.strip("/").split("/")[-1] if self.request.path else ""
-            # check the users role has access to the requested service
-            if project_paths.DISABLE_SECURITY:
-                return
-            # Retrieve the role from the secure cookie
-            role = self.get_secure_cookie("role")
-            if role is None:
-                raise HTTPError(403, "Unauthorized: Role not found.")
-            role = role.decode("utf-8")
-            unauthorized_methods = ROLE_UNAUTHORISED_METHODS.get(role, [])
-            if method in unauthorized_methods:
-                raise HTTPError(
-                    403,
-                    f"The '{role}' role does not have permission to access the '{method}' service.")
-            
-            # check the user has access to the specific resource, i.e. the 'User' role cannot access projects from other users
-            if project_paths.DISABLE_SECURITY:
-                return
-            # Get the requested user from the arguments
-            requested_user = self.get_argument("user", None)
-            if not requested_user:
-                return
-            
-            # Allow access for the special "_clumping" project
-            if requested_user == "_clumping":
-                return
-
-            # Check if the requested user matches the current user
-            current_user = self.current_user
-            if requested_user != current_user:
-                # Restrict guest users from accessing other users' projects
-                if current_user == GUEST_USERNAME:
-                    raise HTTPError(403, f"Guest user '{current_user}' is not authorized to access other users' projects.")
-
-                # Retrieve the user's role
-                user_role = self.get_secure_cookie("role")
-                if user_role is None:
-                    raise HTTPError(403, "Unauthorized: Role not found.")
-
-                user_role = user_role.decode("utf-8")
-
-                # Allow access only if the user is an admin
-                if user_role != "Admin":
-                    raise HTTPError(403, f"User '{current_user}' is not authorized to access projects of other users.")
-            
-            
-            # send a preprocessing message
-            self.send_response(
-                {"status": "Preprocessing", "info": "Preprocessing.."})
-
-            def sendPing():
-                if (hasattr(self, 'ping_message')):
-                    self.send_response(
-                        {"status": "Preprocessing", "info": self.ping_message})
-                else:
-                    self.send_response({"status": "WebSocketOpen"})
-            # start the web socket ping messages to keep the connection alive
-            self.pc = PeriodicCallback(sendPing, (PING_INTERVAL))
-            self.pc.start()
-            # flag to indicate if a client has sent a final message - sometimes the PeriodicCallback does not stop straight away and additional messages are sent when the websocket is closed
-            self.clientSentFinalMsg = False
-        except (HTTPError) as e:
-            last_line = traceback.format_exception(sys.exc_info())[-1].strip()
-            # Extract the part of the line after the colon and whitespace
-            error = last_line.split(":", 1)[-1].strip() if ":" in last_line else last_line
-            # close the websocket
-            self.close({'error': error})
-            # raise an error
-            raise ServicesError("Request denied")
-
-    def send_response(self, message):
-        """Sends the message back to the client with a timestamp, the user and the process id (if any) of any associated process, e.g. Marxan run or PostGIS query.
-
-        Args:
-            message (dict): The message to send.
-        Returns:
-            None
-        """
-        # add in the start time
-        elapsedtime = str(
-            (datetime.datetime.now() - self.startTime).seconds) + "s"
-        message.update({'elapsedtime': elapsedtime})
-        # add a user if passed
-        if "user" in self.request.arguments.keys():
-            message.update(
-                {'user': self.request.arguments["user"][0].decode("utf-8")})
-        # add in messages from descendent classes
-        if hasattr(self, 'pid'):
-            message.update({'pid': self.pid})
-        if hasattr(self, 'marxanProcess'):
-            message.update({'pid': 'm' + str(self.marxanProcess.pid)})
-        try:
-            self.write_message(message)
-        except WebSocketClosedError:
-            self.close(clean=False)
-
-    def close(self, closeMessage={}, clean=True):
-        """Called when the WebSocket connection is closed.
-
-        Args:
-            closeMessage (dict): Optional. The close message to send to the client. Default value is an empty dict.
-            clean (bool): Optional. If False then the connection was closed by the client.
-        Returns:
-            None
-        """
-        # stop the ping messages
-        if hasattr(self, 'pc'):
-            if self.pc.is_running:
-                self.pc.stop()
-        # send a message if the socket is still open
-        if clean:
-            closeMessage.update({'status': 'Finished'})
-            self.send_response(closeMessage)
-            # log any errors
-            if 'error' in closeMessage.keys():
-                logging.warning(closeMessage['error'])
-            # prevent any additional messages
-            self.clientSentFinalMsg = True
-        else:
-            if not self.clientSentFinalMsg:
-                logging.warning(
-                    "The client closed the connection: " + self.request.uri)
-                self.clientSentFinalMsg = True
-        # close the websocket cleanly
-        super().close(1000)
-
-####################################################################################################################################################################################################################################################################
-# MarxanWebSocketHandler subclasses
-####################################################################################################################################################################################################################################################################
-
-# wss://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/runMarxan?user=admin&project=Start%20project
-
-
-class runMarxan(MarxanWebSocketHandler):
+class runMarxan(WebSocketHandler):
     """REST WebSocket Handler. Starts a Marxan run on the server and streams back the output through WebSocket messages. The required arguments in the request.arguments parameter are:
 
     Args:
@@ -3475,7 +3247,7 @@ class runMarxan(MarxanWebSocketHandler):
             self.close({'error': e.args[0]})
 
 
-class importFeatures(MarxanWebSocketHandler):
+class importFeatures(WebSocketHandler):
     """REST WebSocket Handler. Imports a set of features from an unzipped shapefile. This can either be a single feature class or multiple. Sends an error if the feature(s) already exist(s). The required arguments in the request.arguments parameter are:
 
     Args:
@@ -3576,7 +3348,7 @@ class importFeatures(MarxanWebSocketHandler):
 # imports an item from GBIF
 
 
-class importGBIFData(MarxanWebSocketHandler):
+class importGBIFData(WebSocketHandler):
     """REST WebSocket Handler. Imports an item using the GBIF API. The required arguments in the request.arguments parameter are:
 
     Args:
@@ -3787,7 +3559,7 @@ class importGBIFData(MarxanWebSocketHandler):
             return 'No common name'
 
 
-class createFeaturesFromWFS(MarxanWebSocketHandler):
+class createFeaturesFromWFS(WebSocketHandler):
     """REST WebSocket Handler. Creates a new feature (or set of features) from a WFS endpoint. Sends an error if the feature already exist. The required arguments in the request.arguments parameter are:
 
     Args:
@@ -3873,7 +3645,7 @@ class createFeaturesFromWFS(MarxanWebSocketHandler):
                               feature_class_name + ".gfs")
 
 
-class exportProject(MarxanWebSocketHandler):
+class exportProject(WebSocketHandler):
     """REST WebSocket Handler. Exports a project including all of the spatial data and metadata (not applicable to old version Marxan projects) to an *.mxw file. The required arguments in the request.arguments parameter are:
 
     Args:
@@ -3958,7 +3730,7 @@ class exportProject(MarxanWebSocketHandler):
                 'user') + "_" + self.get_argument('project') + ".mxw"})
 
 
-class ImportProject(MarxanWebSocketHandler):
+class ImportProject(WebSocketHandler):
     """
     REST WebSocket Handler. Imports a *.mxw file as a new project.
 
@@ -4189,7 +3961,7 @@ class ImportProject(MarxanWebSocketHandler):
 ####################################################################################################################################################################################################################################################################
 
 
-class QueryWebSocketHandler(MarxanWebSocketHandler):
+class QueryWebSocketHandler(WebSocketHandler):
     """Base class for handling long-running PostGIS queries using WebSockets.
 
     Attributes:
@@ -5094,7 +4866,7 @@ async def save_rast_metadata(description, filename, activity, activity_name):
         return
 
 
-class SaveRasterHandler(MarxanWebSocketHandler):
+class SaveRasterHandler(WebSocketHandler):
     async def open(self):
         try:
             await super().open({'info': "Uploading raster to database..."})
@@ -5185,7 +4957,7 @@ async def _finishImportingImpact(feature_class_name, activity, description, user
         return
 
 
-class CumulativeImpactHandler(MarxanWebSocketHandler):
+class CumulativeImpactHandler(WebSocketHandler):
     async def open(self):
         try:
             await super().open({'info': "Running Cumulative Impact Function..."})
@@ -5267,7 +5039,7 @@ class CumulativeImpactHandler(MarxanWebSocketHandler):
                 })
 
 
-class CreateCostsFromImpactHandler(MarxanWebSocketHandler):
+class CreateCostsFromImpactHandler(WebSocketHandler):
     async def open(self):
         print('CreateCostsFromImpactHandler: ')
         try:
@@ -5422,7 +5194,6 @@ class Application(tornado.web.Application):
 
         return [
             ("/server/auth", AuthHandler),
-            ("/server/block", block),
             (r"/server/projects", ProjectHandler, dict(pg=pg, 
                                     proj_paths=project_paths, 
                                     get_species_data=get_species_data, 
