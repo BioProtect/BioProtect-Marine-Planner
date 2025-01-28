@@ -17,9 +17,8 @@ class FeatureHandler(BaseHandler):
     fetching, and listing projects for a feature.
     """
 
-    def initialize(self, pg, proj_paths, finish_feature_import, upload_tileset_to_mapbox):
+    def initialize(self, pg, finish_feature_import, upload_tileset_to_mapbox):
         self.pg = pg
-        self.proj_paths = proj_paths
         self.finish_feature_import = finish_feature_import
         self.upload_tileset_to_mapbox = upload_tileset_to_mapbox
 

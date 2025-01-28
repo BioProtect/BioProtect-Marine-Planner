@@ -1,9 +1,17 @@
-import os
+import asyncio
+import uuid
+from os import sep
+from os.path import join, relpath
+
 import pandas as pd
 from psycopg2 import sql
-from services.file_service import (
-    file_data_to_df, normalize_dataframe, write_csv, set_folder_paths)
-from services.project_service import get_projects_for_planning_grid
+from services.file_service import (check_zipped_shapefile,
+                                   delete_zipped_shapefile, file_data_to_df,
+                                   get_files_in_folder,
+                                   get_key_values_from_file,
+                                   get_shapefile_fieldnames,
+                                   normalize_dataframe, unzip_shapefile)
+from services.project_service import set_folder_paths, write_csv
 from services.service_error import ServicesError, raise_error
 
 
@@ -13,16 +21,35 @@ class PlanningUnitHandler(BaseHandler):
     retrieving, and updating planning units.
     """
 
-    def initialize(self, pg, proj_paths):
+    def initialize(self, pg, upload_tileset):
         self.pg = pg
-        self.proj_paths = proj_paths
+        self.upload_tileset = upload_tileset
 
-    def validate_args(self, arguments, required_keys):
-        """Validates that all required arguments are present."""
-        missing = [key for key in required_keys if key not in arguments]
-        if missing:
-            raise ServicesError(f"Missing required arguments: {
-                                ', '.join(missing)}")
+    @staticmethod
+    def create_status_dataframe(puid_array, pu_status):
+        return pd.DataFrame({
+            'id': [int(puid) for puid in puid_array],
+            'status_new': [pu_status] * len(puid_array)
+        }, dtype='int64')
+
+    @staticmethod
+    def get_int_array_from_arg(arguments, arg_name):
+        return [
+            int(s) for s in arguments.get(arg_name, [b""])[0].decode("utf-8").split(",")
+        ] if arg_name in arguments else []
+
+    def get_projects_for_planning_grid(self, feature_class_name):
+        user_folder = self.proj_paths.USERS_FOLDER
+        input_dat_files = get_files_in_folder(user_folder, "input.dat")
+
+        projects = [
+            {'user': relpath(file_path, user_folder).split(sep)[0],
+             'name': relpath(file_path, user_folder).split(sep)[1]}
+            for file_path in input_dat_files
+            if get_key_values_from_file(file_path).get('PLANNING_UNIT_NAME') == feature_class_name
+        ]
+
+        return projects
 
     async def get(self):
         """
@@ -71,8 +98,8 @@ class PlanningUnitHandler(BaseHandler):
 
         grid_data = await self.pg.execute(
             """
-            SELECT created_by, source 
-            FROM marxan.metadata_planning_units 
+            SELECT created_by, source
+            FROM marxan.metadata_planning_units
             WHERE feature_class_name = %s;
             """,
             data=[planning_grid],
@@ -87,7 +114,7 @@ class PlanningUnitHandler(BaseHandler):
             raise ServicesError(
                 "The planning grid cannot be deleted as it is a system-supplied item.")
 
-        projects = get_projects_for_planning_grid(planning_grid)
+        projects = self.get_projects_for_planning_grid(planning_grid)
         if projects:
             raise ServicesError(
                 "Grid cannot be deleted as it is used in one or more projects.")
@@ -128,6 +155,79 @@ class PlanningUnitHandler(BaseHandler):
             'planning_unit_grids': planning_unit_grids
         })
 
+    def list_projects_for_planning_grid(self):
+        self.validate_args(self.request.arguments, ['feature_class_name'])
+        projects = self.get_projects_for_planning_grid(
+            self.get_argument('feature_class_name'))
+        self.send_response({
+            'info': "Projects info returned",
+            'projects': projects
+        })
+
+    async def get_planning_units_cost_data(self):
+        self.validate_args(self.request.arguments, ['user', 'project'])
+        set_folder_paths(self, self.request.arguments,
+                         self.proj_paths.USERS_FOLDER)
+
+        df = file_data_to_df(join(
+            self.folder_input, self.projectData["files"]["PUNAME"]))
+        data = normalize_dataframe(df, "cost", "id", 9)
+
+        self.send_response({
+            "data": data[0],
+            'min': str(data[1]),
+            'max': str(data[2])
+        })
+
+    async def get_planning_unit_data(self):
+        self.validate_args(self.request.arguments, ['user', 'project', 'puid'])
+        files = self.projectData["files"]
+        puid = self.get_argument('puid')
+
+        pu_df = file_data_to_df(join(self.folder_input, files["PUNAME"]))
+        pu_data = pu_df.loc[pu_df['id'] == int(puid)].iloc[0]
+
+        df = file_data_to_df(join(self.folder_input, files["PUVSPRNAME"]))
+        features = df.loc[df['pu'] == int(
+            puid)] if not df.empty else pd.DataFrame()
+
+        self.send_response({
+            "info": 'Planning unit data returned',
+            "data": {
+                'features': features.to_dict(orient="records"),
+                'pu_data': pu_data.to_dict()
+            }
+        })
+
+    async def update_pu_file(self):
+        args = self.request.arguments
+        self.validate_args(args, ['user', 'project'])
+
+        status1_ids = self.get_int_array_from_arg(args, "status1")
+        status2_ids = self.get_int_array_from_arg(args, "status2")
+        status3_ids = self.get_int_array_from_arg(args, "status3")
+
+        status1 = self.create_status_dataframe(status1_ids, 1)
+        status2 = self.create_status_dataframe(status2_ids, 2)
+        status3 = self.create_status_dataframe(status3_ids, 3)
+
+        pu_file_path = join(
+            self.folder_input, self.projectData["files"]["PUNAME"])
+        df = file_data_to_df(pu_file_path)
+
+        df['status'] = 0
+        status_updates = pd.concat([status1, status2, status3])
+
+        df = df.merge(status_updates, on='id', how='left')
+        df['status'] = df['status_new'].fillna(df['status']).astype('int')
+        df = df.drop(columns=['status_new'])
+        df = df.astype({'id': 'int64', 'cost': 'int64', 'status': 'int64'})
+        df = df.sort_values(by='id')
+
+        await write_csv(self, "PUNAME", df)
+
+        self.send_response({'info': "pu.dat file updated"})
+
     async def import_planning_unit_grid(self):
         self.validate_args(self.request.arguments, [
                            'filename', 'name', 'description'])
@@ -135,15 +235,16 @@ class PlanningUnitHandler(BaseHandler):
         name = self.get_argument('name')
         description = self.get_argument('description')
         user = self.get_current_user()
+        import_folder = self.proj_paths.IMPORT_FOLDER
 
         root_filename = await asyncio.get_running_loop().run_in_executor(
-            None, unzip_shapefile, self.proj_paths.IMPORT_FOLDER, filename
+            None, unzip_shapefile, import_folder, filename
         )
 
-        feature_class_name = get_unique_feature_name("pu_")
+        feature_class_name = "pu_" + uuid.uuid4().hex[:29]
         tileset_id = f"{MAPBOX_USER}.{feature_class_name}"
-        shapefile_path = os.path.join(
-            self.proj_paths.IMPORT_FOLDER, f"{root_filename}.shp")
+        shapefile_path = join(
+            import_folder, f"{root_filename}.shp")
 
         try:
             check_zipped_shapefile(shapefile_path)
@@ -161,7 +262,7 @@ class PlanningUnitHandler(BaseHandler):
                 [feature_class_name, name, description, user, tileset_id]
             )
 
-            await self.pg.importShapefile(self.proj_paths.IMPORT_FOLDER, f"{root_filename}.shp", feature_class_name)
+            await self.pg.importShapefile(import_folder, f"{root_filename}.shp", feature_class_name)
             await self.pg.isValid(feature_class_name)
 
             await self.pg.execute(
@@ -197,13 +298,13 @@ class PlanningUnitHandler(BaseHandler):
                 [feature_class_name]
             )
 
-            upload_id = upload_tileset(shapefile_path, feature_class_name)
+            upload_id = self.upload_tileset(shapefile_path, feature_class_name)
 
         except ServicesError as e:
             raise
         finally:
             await asyncio.get_running_loop().run_in_executor(
-                None, delete_zipped_shapefile, self.proj_paths.IMPORT_FOLDER, filename, root_filename
+                None, delete_zipped_shapefile, import_folder, filename, root_filename
             )
 
         self.send_response({
@@ -212,36 +313,3 @@ class PlanningUnitHandler(BaseHandler):
             'uploadId': upload_id,
             'alias': name
         })
-
-    def list_projects_for_planning_grid(self):
-        self.validate_args(self.request.arguments, ['feature_class_name'])
-        projects = get_projects_for_planning_grid(
-            self.get_argument('feature_class_name'))
-        self.send_response({
-            'info': "Projects info returned",
-            'projects': projects
-        })
-
-    async def get_planning_units_cost_data(self):
-        self.validate_args(self.request.arguments, ['user', 'project'])
-        set_folder_paths(self, self.request.arguments,
-                         self.proj_paths.USERS_FOLDER)
-
-        df = file_data_to_df(os.path.join(
-            self.folder_input, self.projectData["files"]["PUNAME"]))
-        data = normalize_dataframe(df, "cost", "id", 9)
-
-        self.send_response({
-            "data": data[0],
-            'min': str(data[1]),
-            'max': str(data[2])
-        })
-
-    async def update_pu_file(self):
-        self.validate_args(self.request.arguments, ['user', 'project'])
-
-        status1_ids = self.get_int_array_from_arg(
-            self.request.arguments, "status1")
-        status2_ids = self.get_int_array_from_arg(
-            self.request.arguments, "status2")
-        status3_ids = self.get_int_array_from_arg

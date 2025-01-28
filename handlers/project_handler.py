@@ -25,9 +25,8 @@ class ProjectHandler(BaseHandler):
     fetching, and updating projects.
     """
 
-    def initialize(self, pg, proj_paths, get_species_data, update_species):
+    def initialize(self, pg, get_species_data, update_species):
         self.pg = pg
-        self.proj_paths = proj_paths
         self.get_species_data = get_species_data
         self.update_species = update_species
 

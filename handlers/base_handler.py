@@ -4,8 +4,9 @@ import traceback
 
 from classes.folder_path_config import get_folder_path_config
 from tornado.web import RequestHandler
+from services.service_error import ServicesError, raise_error
 
-folder_path_config = get_folder_path_config()
+proj_paths = get_folder_path_config()
 
 
 class BaseHandler(RequestHandler):
@@ -20,9 +21,12 @@ class BaseHandler(RequestHandler):
         folder_output: A string with the path to the projects output folder (if the request.arguments contains a project key).
     """
 
+    def initialize(self):
+        self.proj_paths = proj_paths
+
     def set_default_headers(self):
         """Writes CORS headers in the response to prevent CORS errors in the client"""
-        if folder_path_config.DISABLE_SECURITY:
+        if proj_paths.DISABLE_SECURITY:
             self.set_header("Access-Control-Allow-Origin",
                             "http://localhost:3000")
             self.set_header("Access-Control-Allow-Methods",
@@ -45,6 +49,13 @@ class BaseHandler(RequestHandler):
         """
         if self.get_secure_cookie("user"):
             return self.get_secure_cookie("user").decode("utf-8")
+
+    def validate_args(self, arguments, required_keys):
+        """Validates that all required arguments are present."""
+        missing = [key for key in required_keys if key not in arguments]
+        if missing:
+            raise ServicesError(f"Missing required arguments: {
+                                ', '.join(missing)}")
 
     def send_response(self, response):
         """Used by all descendent classes to write the response data and send it.
@@ -95,7 +106,7 @@ class BaseHandler(RequestHandler):
             *exc_info)[-1].split(":", 1)[-1].strip()
 
         # Set CORS headers if needed
-        if not folder_path_config.DISABLE_SECURITY:
+        if not proj_paths.DISABLE_SECURITY:
             with contextlib.suppress(Exception):
                 _checkCORS(self)
 

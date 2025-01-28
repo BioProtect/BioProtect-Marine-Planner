@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 from services.service_error import ServicesError
 import shutil
+from osgeo import ogr
 
 
 def copy_directory(src, dest):
@@ -22,39 +23,41 @@ def copy_directory(src, dest):
                             src}' to '{dest}': {e}") from e
 
 
-def set_folder_paths(obj, arguments, users_folder):
+def get_shapefile_fieldnames(shapefile):
     """
-    Sets the various paths to the user's folder and project folders using the request arguments.
+    Retrieves the field names from a shapefile.
 
     Args:
-        obj (BaseHandler): The request handler instance.
-        arguments (dict): Request arguments.
-        users_folder (str): Root folder for all users.
+        shapefile (str): The full path to the shapefile (*.shp).
 
     Returns:
-        BaseHandler: The modified request handler instance.
+        list[str]: A list of field names in the shapefile.
+
+    Raises:
+        ServicesError: If the shapefile does not exist, cannot be opened, or contains no layers.
     """
-    def get_decoded_argument(arg_name):
-        """Decodes and returns the value of the given argument name."""
-        return arguments.get(arg_name, [b""])[0].decode("utf-8").strip()
+    # Ensure OGR exceptions are raised
+    ogr.UseExceptions()
 
-    # Decode and set user-related paths
-    user = get_decoded_argument("user")
-    if not user:
-        return obj  # Exit if no user argument is provided
+    try:
+        # Open the shapefile
+        data_source = ogr.Open(shapefile)
+        if not data_source:
+            raise ServicesError(
+                f"Shapefile '{shapefile}' not found or could not be opened.")
 
-    obj.user = user
-    obj.folder_user = path.join(users_folder, user) + sep
+        # Access the first layer
+        layer = data_source.GetLayer(0)
+        if not layer:
+            raise ServicesError(f"No layers found in shapefile '{shapefile}'.")
 
-    # Decode and set project-related paths (if present)
-    project = get_decoded_argument("project")
-    if project:
-        obj.project = project
-        obj.folder_project = path.join(obj.folder_user, project) + sep
-        obj.folder_input = path.join(obj.folder_project, "input")
-        obj.folder_output = path.join(obj.folder_project, "output") + sep
+        # Extract field names from the layer definition
+        layer_definition = layer.GetLayerDefn()
+        return [layer_definition.GetFieldDefn(i).GetName() for i in range(layer_definition.GetFieldCount())]
 
-    return obj
+    except RuntimeError as e:
+        raise ServicesError(f"Error reading shapefile '{
+                            shapefile}': {e.args[0]}")
 
 
 def normalize_dataframe(df, column_to_normalize_by, puid_column_name, classes=None):
@@ -543,7 +546,7 @@ def check_zipped_shapefile(shapefile, errors_page):
         )
 
 
-def get_files_in_folder_recursive(folder, filename):
+def get_files_in_folder(folder, filename):
     """Gets an array of filenames in the folder recursively.
 
     Args:

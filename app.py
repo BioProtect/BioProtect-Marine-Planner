@@ -55,7 +55,7 @@ from services.file_service import (add_parameter_to_file,
                                    delete_all_files,
                                    delete_records_in_text_file,
                                    delete_zipped_shapefile, get_dict_value,
-                                   get_files_in_folder_recursive,
+                                   get_files_in_folder,
                                    get_key_values_from_file,
                                    get_output_filename, read_file, unzip_file,
                                    unzip_shapefile, update_file_parameters,
@@ -72,6 +72,7 @@ from handlers.user_handler import UserHandler
 from handlers.project_handler import ProjectHandler
 from handlers.feature_handler import FeatureHandler
 from handlers.websocket_handler import WebSocketHandler
+from handlers.planning_unit_handler import PlanningUnitHandler
 from sqlalchemy import create_engine, exc
 from tornado import concurrent, gen, httpclient, queues
 from tornado.ioloop import IOLoop, PeriodicCallback
@@ -147,7 +148,7 @@ LOGGING_LEVEL = logging.INFO
 
 # pdoc3 dict to whitelist private members for the documentation
 __pdoc__ = {}
-privateMembers = ['getGeometryType', 'add_parameter_to_file', 'check_zipped_shapefile', 'cleanup', 'clone_project', 'create_user', 'create_zipfile', 'delete_all_files', 'delete_archive_files', '_deleteFeature',  'delete_records_in_text_file', 'del_tileset', 'delete_zipped_shapefile', 'dismiss_notification',  'finish_feature_import', '_getAllProjects', 'get_dict_value', 'get_files_in_folder_recursive',   'get_key_value', 'get_key_values_from_file', 'get_keys', 'get_marxan_log', 'get_notifications_data', 'get_output_filename', 'get_pu_grids','get_project_data', 'get_projects_for_feature', 'get_projects_for_planning_grid', 'get_projects_for_user', 'get_run_logs', 'get_safe_project_name', 'get_species_data', 'get_unique_feature_name', 'get_user_data', 'get_users', 'get_users_data', 'normalize_dataframe', 'pad_dict', '_preprocessProtectedAreas', 'puid_array_to_df', 'raise_error', 'read_file', '_reprocessProtectedAreas', 'reset_notifications', 'run_command', '_setCORS', 'set_folder_paths', 'set_global_vars', 'unzip_file', 'unzip_shapefile', 'update_dataframe', 'update_file_parameters', 'update_run_log', 'update_species_file', '_uploadTileset', 'upload_tileset_to_mapbox', 'validate_args', 'write_csv', 'write_to_file', 'write_df_to_file', 'zip_folder']
+privateMembers = ['getGeometryType', 'add_parameter_to_file', 'check_zipped_shapefile', 'cleanup', 'clone_project', 'create_user', 'create_zipfile', 'delete_all_files', 'delete_archive_files', '_deleteFeature',  'delete_records_in_text_file', 'del_tileset', 'delete_zipped_shapefile', 'dismiss_notification',  'finish_feature_import', '_getAllProjects', 'get_dict_value', 'get_files_in_folder',   'get_key_value', 'get_keys', 'get_marxan_log', 'get_notifications_data', 'get_output_filename', 'get_pu_grids','get_project_data', 'get_projects_for_feature', 'get_projects_for_user', 'get_run_logs', 'get_safe_project_name', 'get_species_data', 'get_unique_feature_name', 'get_user_data', 'get_users', 'get_users_data', 'normalize_dataframe', 'pad_dict', '_preprocessProtectedAreas', 'puid_array_to_df', 'raise_error', 'read_file', '_reprocessProtectedAreas', 'reset_notifications', 'run_command', '_setCORS', 'set_folder_paths', 'set_global_vars', 'unzip_file', 'unzip_shapefile', 'update_dataframe', 'update_file_parameters', 'update_run_log', 'update_species_file', '_uploadTileset', 'upload_tileset_to_mapbox', 'validate_args', 'write_csv', 'write_to_file', 'write_df_to_file', 'zip_folder']
 
 for m in privateMembers:
     __pdoc__[m] = True
@@ -787,32 +788,6 @@ def get_shapefile_fieldnames(shapefile):
         raise ServicesError(f"Error reading shapefile '{
                             shapefile}': {e.args[0]}")
 
-
-def get_projects_for_planning_grid(feature_class_name):
-    """
-    Retrieves a list of projects that use the specified planning grid.
-
-    Args:
-        feature_class_name (str): The name of the feature class to search for.
-
-    Returns:
-        list[dict]: A list of projects using the feature, where each item contains the user and project name.
-    """
-    input_dat_files = get_files_in_folder_recursive(project_paths.USERS_FOLDER, "input.dat")
-    projects = []
-
-    for file_path in input_dat_files:
-        # Extract key-value pairs from the input.dat file
-        values = get_key_values_from_file(file_path)
-
-        # Check if the planning grid matches the feature_class_name
-        if values.get('PLANNING_UNIT_NAME') == feature_class_name:
-            # Extract user and project from the file path
-            relative_path = os.path.relpath(file_path, project_paths.USERS_FOLDER)
-            user, project = relative_path.split(os.sep)[:2]
-            projects.append({'user': user, 'name': project})
-
-    return projects
 
 
 def _setCORS(obj):
@@ -3863,7 +3838,7 @@ class resetDatabase(QueryWebSocketHandler):
                     if os.path.split(user_folder[:-1])[1] not in ['admin', '_clumping', 'guest']:
                         shutil.rmtree(user_folder)
                 # delete the features that are not in use
-                specDatFiles = get_files_in_folder_recursive(
+                specDatFiles = get_files_in_folder(
                     project_paths.CASE_STUDIES_FOLDER, "spec.dat")
                 # iterate through the spec.dat files and get a unique list of feature ids
                 featureIdsToKeep = []
@@ -3879,7 +3854,7 @@ class resetDatabase(QueryWebSocketHandler):
                 self.send_response(
                     {'status': 'Preprocessing', 'info': "Deleted features"})
                 # delete the planning grids that are not in use
-                planningGridFiles = get_files_in_folder_recursive(
+                planningGridFiles = get_files_in_folder(
                     project_paths.CASE_STUDIES_FOLDER, "input.dat")
                 # iterate through the input.dat files and get a unique list of planning grids
                 planningGridsToKeep = []
@@ -4011,7 +3986,7 @@ class updateWDPA(QueryWebSocketHandler):
                             # delete all of the existing intersections between planning units and the old version of the WDPA
                             self.send_response(
                                 {'status': "Preprocessing", 'info': 'Invalidating existing WDPA intersections'})
-                            intersection_files = get_files_in_folder_recursive(
+                            intersection_files = get_files_in_folder(
                                 project_paths.USERS_FOLDER, "protected_area_intersections.dat")
 
                             # Path to the empty template file
@@ -4656,18 +4631,15 @@ class Application(tornado.web.Application):
         return [
             ("/server/auth", AuthHandler),
             (r"/server/projects", ProjectHandler, dict(pg=pg, 
-                                    proj_paths=project_paths, 
                                     get_species_data=get_species_data, 
                                     update_species=update_species_file)),
             ("/server/exportProject", exportProject),
             ("/server/importProject", ImportProject),
-            (r"/server/users", UserHandler, dict(pg=pg, 
-                                                 proj_paths=project_paths)),
+            (r"/server/users", UserHandler, dict(pg=pg)),
             (r"/server/features", FeatureHandler, dict(pg=pg, 
-                                                       proj_paths=project_paths,
                                                        finish_feature_import=finish_feature_import, 
                                                        upload_tileset_to_mapbox=upload_tileset_to_mapbox))
-            
+            (r"/server/planning-units", PlanningUnitHandler, dict(pg=pg, upload_tileset=upload_tileset)
 
             ("/server/updateCosts", updateCosts),
             ("/server/deleteCost", deleteCost),

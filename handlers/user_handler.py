@@ -23,9 +23,8 @@ class UserHandler(BaseHandler):
     updating parameters, and retrieving user data.
     """
 
-    def initialize(self, pg, proj_paths):
+    def initialize(self, pg):
         self.pg = pg
-        self.proj_paths = proj_paths
 
     def validate_args(self, arguments, required_arguments):
         """
