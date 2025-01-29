@@ -8,9 +8,9 @@ from asyncpg.exceptions import UniqueViolationError
 from handlers.base_handler import BaseHandler
 from passlib.hash import bcrypt
 from psycopg2 import sql
-from services.file_service import (get_key_values_from_file,
-                                   get_notifications_data,
-                                   update_file_parameters)
+from services.user_service import get_notifications_data
+from services.file_service import (
+    get_key_values_from_file, update_file_parameters)
 from services.project_service import clone_a_project
 from services.service_error import ServicesError, raise_error
 

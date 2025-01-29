@@ -4,8 +4,7 @@ import traceback
 from urllib.parse import urlparse
 
 from classes.folder_path_config import get_folder_path_config
-from services.file_service import set_folder_paths
-from services.project_service import get_project_data
+from services.project_service import get_project_data, set_folder_paths
 from services.service_error import ServicesError
 from tornado.ioloop import PeriodicCallback
 from tornado.web import HTTPError

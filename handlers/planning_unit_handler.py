@@ -13,6 +13,7 @@ from services.file_service import (check_zipped_shapefile,
                                    normalize_dataframe, unzip_shapefile)
 from services.project_service import set_folder_paths, write_csv
 from services.service_error import ServicesError, raise_error
+from handlers.base_handler import BaseHandler
 
 
 class PlanningUnitHandler(BaseHandler):

@@ -66,7 +66,8 @@ from services.project_service import (get_project_data,
                                       write_csv)
 from services.run_command_service import run_command
 from services.service_error import ServicesError, raise_error
-from services.user_service import (dismiss_notification, get_notifications_data, get_users, reset_notifications)
+from services.user_service import (
+    dismiss_notification, get_users, reset_notifications)
 from handlers.base_handler import BaseHandler
 from handlers.user_handler import UserHandler
 from handlers.project_handler import ProjectHandler
@@ -95,10 +96,11 @@ from datetime import datetime, timezone, timedelta
 ####################################################################################################################################################################################################################################################################
 
 # SECURITY SETTINGS
-PERMITTED_METHODS = ["getServerData", "testTornado", "getProjectsWithGrids", "getAtlasLayers"]
+PERMITTED_METHODS = ["getServerData", "testTornado",
+                     "getProjectsWithGrids", "getAtlasLayers"]
 """REST services that do not need authentication/authorisation."""
 ROLE_UNAUTHORISED_METHODS = {
-    "ReadOnly": ["createProject", "upgradeProject", "getCountries", "deletePlanningUnitGrid", "createPlanningUnitGrid", "uploadTilesetToMapBox", "uploadFileToFolder", "uploadFile", "importPlanningUnitGrid", "createFeaturePreprocessingFileFromImport", "importFeatures", "updatePUFile", "updateSpecFile", "getMarxanLog", "PreprocessFeature", "preprocessPlanningUnits", "preprocessProtectedAreas", "runMarxan", "stopProcess", "testRoleAuthorisation", "getRunLogs", "clearRunLogs", "updateWDPA", "unzipShapefile", "getShapefileFieldnames", "runGapAnalysis", "importGBIFData", "deleteGapAnalysis", "shutdown", "addParameter", "resetDatabase", "cleanup", "exportProject", "importProject",'updateCosts', 'deleteCost', 'runSQLFile', 'exportPlanningUnitGrid'],
+    "ReadOnly": ["createProject", "upgradeProject", "getCountries", "createPlanningUnitGrid", "uploadTilesetToMapBox", "uploadFileToFolder", "uploadFile", "importPlanningUnitGrid", "createFeaturePreprocessingFileFromImport", "importFeatures", "updatePUFile", "updateSpecFile", "getMarxanLog", "PreprocessFeature", "preprocessPlanningUnits", "preprocessProtectedAreas", "runMarxan", "stopProcess", "testRoleAuthorisation", "getRunLogs", "clearRunLogs", "updateWDPA", "unzipShapefile", "getShapefileFieldnames", "runGapAnalysis", "importGBIFData", "deleteGapAnalysis", "shutdown", "addParameter", "resetDatabase", "cleanup", "exportProject", "importProject", 'updateCosts', 'deleteCost', 'runSQLFile'],
     "User": ["testRoleAuthorisation", "clearRunLogs", "updateWDPA", "shutdown", "addParameter", "resetDatabase", "cleanup", 'runSQLFile'],
     "Admin": []
 }
@@ -148,7 +150,8 @@ LOGGING_LEVEL = logging.INFO
 
 # pdoc3 dict to whitelist private members for the documentation
 __pdoc__ = {}
-privateMembers = ['getGeometryType', 'add_parameter_to_file', 'check_zipped_shapefile', 'cleanup', 'clone_project', 'create_user', 'create_zipfile', 'delete_all_files', 'delete_archive_files', '_deleteFeature',  'delete_records_in_text_file', 'del_tileset', 'delete_zipped_shapefile', 'dismiss_notification',  'finish_feature_import', '_getAllProjects', 'get_dict_value', 'get_files_in_folder',   'get_key_value', 'get_keys', 'get_marxan_log', 'get_notifications_data', 'get_output_filename', 'get_pu_grids','get_project_data', 'get_projects_for_feature', 'get_projects_for_user', 'get_run_logs', 'get_safe_project_name', 'get_species_data', 'get_unique_feature_name', 'get_user_data', 'get_users', 'get_users_data', 'normalize_dataframe', 'pad_dict', '_preprocessProtectedAreas', 'puid_array_to_df', 'raise_error', 'read_file', '_reprocessProtectedAreas', 'reset_notifications', 'run_command', '_setCORS', 'set_folder_paths', 'set_global_vars', 'unzip_file', 'unzip_shapefile', 'update_dataframe', 'update_file_parameters', 'update_run_log', 'update_species_file', '_uploadTileset', 'upload_tileset_to_mapbox', 'validate_args', 'write_csv', 'write_to_file', 'write_df_to_file', 'zip_folder']
+privateMembers = ['getGeometryType', 'add_parameter_to_file', 'check_zipped_shapefile', 'cleanup', 'clone_project', 'create_user', 'create_zipfile', 'delete_all_files', 'delete_archive_files', '_deleteFeature',  'delete_records_in_text_file', 'del_tileset', 'delete_zipped_shapefile', 'dismiss_notification',  'finish_feature_import', '_getAllProjects', 'get_dict_value', 'get_files_in_folder',   'get_key_value', 'get_keys', 'get_marxan_log', 'get_notifications_data', 'get_output_filename', 'get_pu_grids', 'get_project_data', 'get_projects_for_feature', 'get_projects_for_user', 'get_run_logs',
+                  'get_safe_project_name', 'get_species_data', 'get_unique_feature_name', 'get_user_data', 'get_users', 'get_users_data', 'normalize_dataframe', 'pad_dict', '_preprocessProtectedAreas', 'puid_array_to_df', 'raise_error', 'read_file', '_reprocessProtectedAreas', 'reset_notifications', 'run_command', '_setCORS', 'set_folder_paths', 'set_global_vars', 'unzip_file', 'unzip_shapefile', 'update_dataframe', 'update_file_parameters', 'update_run_log', 'update_species_file', '_uploadTileset', 'upload_tileset_to_mapbox', 'validate_args', 'write_csv', 'write_to_file', 'write_df_to_file', 'zip_folder']
 
 for m in privateMembers:
     __pdoc__[m] = True
@@ -686,7 +689,7 @@ async def finish_feature_import(feature_class_name, name, description, source, u
         sql.SQL("CREATE INDEX {} ON marxan.{} USING GIST (geometry);")
         .format(sql.Identifier(index_name), sql.Identifier(feature_class_name))
     )
-    
+
     # Add a primary key to the table
     try:
         await pg.execute(
@@ -698,13 +701,13 @@ async def finish_feature_import(feature_class_name, name, description, source, u
             .format(sql.Identifier(feature_class_name))
         )
     except psycopg2.errors.InvalidTableDefinition as e:
-        logging.warning(f"Primary key already exists for {feature_class_name}: {e}")
-    
-    
+        logging.warning(f"Primary key already exists for {
+                        feature_class_name}: {e}")
+
     # Insert metadata for the feature
     try:
         geometry_type = await pg.getGeometryType(feature_class_name)
-        
+
         if geometry_type != 'ST_Point':
             # Polygon layer: Calculate total area
             query = """
@@ -736,13 +739,14 @@ async def finish_feature_import(feature_class_name, name, description, source, u
                 ) AS sub
                 RETURNING unique_id;
             """
-        
+
         feature_id = await pg.execute(
             sql.SQL(query).format(sql.Identifier(feature_class_name)),
-            data=[feature_class_name, name, description, tileset_id, source, user],
+            data=[feature_class_name, name,
+                  description, tileset_id, source, user],
             return_format="Array"
         )
-        
+
     except ServicesError as e:
         await pg.execute(sql.SQL("DROP TABLE IF EXISTS marxan.{};").format(sql.Identifier(feature_class_name)))
         if "Database integrity error" in e.args[0]:
@@ -789,7 +793,6 @@ def get_shapefile_fieldnames(shapefile):
                             shapefile}': {e.args[0]}")
 
 
-
 def _setCORS(obj):
     """Sets the CORS headers on the request to prevent CORS errors in the client.
 
@@ -808,7 +811,8 @@ def _setCORS(obj):
         parsed = urlparse(referer)
         origin = parsed.scheme + "://" + parsed.netloc
         # get the method
-        method = obj.request.path.strip("/").split("/")[-1] if obj.request.path else ""
+        method = obj.request.path.strip(
+            "/").split("/")[-1] if obj.request.path else ""
         # check the origin is permitted either by being in the list of permitted domains or if the referer and host are on the same machine, i.e. not cross domain - OR if a permitted method is being called
         if (origin in project_paths.PERMITTED_DOMAINS) or (referer.find(obj.request.host_name) != -1) or (method in PERMITTED_METHODS):
             obj.set_header("Access-Control-Allow-Origin", origin)
@@ -880,16 +884,20 @@ def update_run_log(pid, start_time, runs_completed, runs_required, status):
         # Locate the index of the record to update
         record_index = run_log.loc[run_log['pid'] == pid].index[0]
     except (IndexError, FileNotFoundError, KeyError):
-        raise ServicesError(f"Unable to update run log for pid {pid} with status {status}.")
+        raise ServicesError(f"Unable to update run log for pid {
+                            pid} with status {status}.")
     else:
         # Update the record in place
         current_time = datetime.datetime.now()
         if start_time:
-            run_log.at[record_index, 'endtime'] = current_time.strftime("%d/%m/%y %H:%M:%S")
-            run_log.at[record_index, 'runtime'] = f"{(current_time - start_time).seconds}s"
+            run_log.at[record_index, 'endtime'] = current_time.strftime(
+                "%d/%m/%y %H:%M:%S")
+            run_log.at[record_index, 'runtime'] = f"{
+                (current_time - start_time).seconds}s"
 
         if runs_completed is not None:
-            run_log.at[record_index, 'runs'] = f"{runs_completed}/{runs_required}"
+            run_log.at[record_index, 'runs'] = f"{
+                runs_completed}/{runs_required}"
 
         # Update the status only if it is currently 'Running'
         if run_log.at[record_index, 'status'] == 'Running':
@@ -925,19 +933,21 @@ async def cleanup():
     clump_files = glob.glob(os.path.join(project_paths.CLUMP_FOLDER, "*"))
     one_day_ago = datetime.datetime.now() - datetime.timedelta(days=1)
     for file_path in clump_files:
-        file_mod_time = datetime.datetime.fromtimestamp(os.path.getmtime(file_path))
+        file_mod_time = datetime.datetime.fromtimestamp(
+            os.path.getmtime(file_path))
         if file_mod_time < one_day_ago:
             os.remove(file_path)
 
     # Folder cleanup - Remove orphaned project folders
     users = get_users()
     for user in users:
-        user_projects = glob.glob(os.path.join(project_paths.USERS_FOLDER, user, "*/"))
+        user_projects = glob.glob(os.path.join(
+            project_paths.USERS_FOLDER, user, "*/"))
         for project_path in user_projects:
             # Remove project folder if it's empty
             if not os.listdir(project_path):
                 shutil.rmtree(project_path)
-                
+
 
 ####################################################################################################################################################################################################################################################################
 # generic classes
@@ -1018,7 +1028,7 @@ class methodNotFound(BaseHandler):
     """
     REST HTTP handler invoked when the REST service method does not match any defined handlers.
     """
-            
+
     def prepare(self):
         """
         Overrides the `prepare` method to handle cases where a requested method is not found.
@@ -1121,7 +1131,6 @@ class getCountries(BaseHandler):
             raise_error(self, e.args[0])
 
 
-
 class getPlanningUnitGrids(BaseHandler):
     """REST HTTP handler. Gets all of the planning grid data. The required arguments in the request.arguments parameter are:
 
@@ -1162,7 +1171,8 @@ class ImportPlanningUnitGrid(BaseHandler):
     async def get(self):
         try:
             # Validate input arguments
-            validate_args(self.request.arguments, ['filename', 'name', 'description'])
+            validate_args(self.request.arguments, [
+                          'filename', 'name', 'description'])
             filename = self.get_argument('filename')
             name = self.get_argument('name')
             description = self.get_argument('description')
@@ -1176,14 +1186,16 @@ class ImportPlanningUnitGrid(BaseHandler):
             # Generate a unique feature class name
             feature_class_name = get_unique_feature_name("pu_")
             tileset_id = f"{MAPBOX_USER}.{feature_class_name}"
-            shapefile_path = os.path.join(project_paths.IMPORT_FOLDER, f"{root_filename}.shp")
+            shapefile_path = os.path.join(
+                project_paths.IMPORT_FOLDER, f"{root_filename}.shp")
 
             try:
                 # Validate the shapefile
                 check_zipped_shapefile(shapefile_path)
                 fieldnames = get_shapefile_fieldnames(shapefile_path)
                 if "PUID" in fieldnames:
-                    raise ServicesError("The field 'puid' in the shapefile must be lowercase.")
+                    raise ServicesError(
+                        "The field 'puid' in the shapefile must be lowercase.")
 
                 # Insert metadata for the planning unit grid
                 await pg.execute(
@@ -1239,9 +1251,11 @@ class ImportPlanningUnitGrid(BaseHandler):
             except ServicesError as e:
                 # Handle specific errors related to the shapefile or constraints
                 if all(keyword in e.args[0] for keyword in ['column', 'puid', 'does not exist']):
-                    raise ServicesError("The field 'puid' does not exist in the shapefile.") from e
+                    raise ServicesError(
+                        "The field 'puid' does not exist in the shapefile.") from e
                 if 'violates unique constraint' in e.args[0]:
-                    raise ServicesError(f"The planning grid '{name}' already exists.") from e
+                    raise ServicesError(f"The planning grid '{
+                                        name}' already exists.") from e
                 raise
             finally:
                 # Cleanup: delete the shapefile and zip file
@@ -1264,106 +1278,6 @@ class ImportPlanningUnitGrid(BaseHandler):
 
         except ServicesError as e:
             raise_error(self, e.args[0])
-
-
-
-class exportPlanningUnitGrid(BaseHandler):
-    """REST HTTP handler. Exports and zips a planning unit grid to a shapefile in the project_paths.EXPORT_FOLDER. The required arguments in the request.arguments parameter are:
-
-    Args:
-        name (string): The name of the feature class in PostGIS that will be exported and zipped.
-    Returns:
-        A dict with the following structure (if the class raises an exception, the error message is included in an 'error' key/value pair):
-
-        {
-            "info": Informational message,
-            "filename": The name of the zip file created
-        }
-    """
-
-    async def get(self):
-        try:
-            # validate the input arguments
-            validate_args(self.request.arguments, ['name'])
-            # export the shapefile
-            folder = project_paths.EXPORT_FOLDER
-            feature_class_name = self.get_argument('name')
-            await pg.exportToShapefile(folder, feature_class_name, tEpsgCode="EPSG:4326")
-            zipfilename = create_zipfile(folder, feature_class_name)
-            
-            # set the response
-            self.send_response({'info': "Planning grid '" + self.get_argument(
-                'name') + "' exported", 'filename': self.get_argument('name') + ".zip"})
-        except ServicesError as e:
-            raise_error(self, e.args[0])
-
-class DeletePlanningUnitGrid(BaseHandler):
-    """REST HTTP handler. Deletes a planning grid and the corresponding tileset on Mapbox. The required arguments in the request.arguments parameter are:
-
-    Args:
-        planning_grid_name (string): The name of the planning grid that will be deleted.
-    Returns:
-        A dict with the following structure (if the class raises an exception, the error message is included in an 'error' key/value pair):
-
-        {
-            "info": Informational message
-        }
-    Raises:
-        ServicesError: If the planning grid is system supplied or is in use by one or more projects.
-    """
-
-    async def get(self):
-        try:
-            # validate the input arguments
-            validate_args(self.request.arguments, ['planning_grid_name'])
-            # Fetch data for the planning grid
-            planning_grid = self.get_argument('planning_grid_name')
-        
-            grid_data = await pg.execute(
-                """
-                SELECT created_by, source 
-                FROM marxan.metadata_planning_units 
-                WHERE feature_class_name = %s;
-                """,
-                data=[planning_grid],
-                return_format="Dict"
-            )
-
-            # If the planning grid is not found, return early
-            if not grid_data:
-                return
-
-            # Check if the planning grid is system-supplied
-            created_by = grid_data[0].get("created_by")
-            if created_by == "global admin":
-                raise ServicesError("The planning grid cannot be deleted as it is a system-supplied item. ")
-
-            # Check if the planning grid is used in any projects
-            projects = get_projects_for_planning_grid(planning_grid)
-            if projects:
-                    "Grid cannot be deleted as it is used in one or more projects.")
-
-            # Delete the tileset on Mapbox if it is not a standard planning grid
-            source = grid_data[0].get("source")
-            if source != "planning_grid function":
-                del_tileset(planning_grid)
-
-            # Delete the planning grid record from the metadata_planning_units table
-            await pg.execute(
-                "DELETE FROM marxan.metadata_planning_units WHERE feature_class_name = %s;",
-                data=[planning_grid]
-            )
-
-            # Drop the feature class table
-            await pg.execute(
-                sql.SQL("DROP TABLE IF EXISTS marxan.{};").format(sql.Identifier(planning_grid))
-            )
-
-            # set the response
-            self.send_response({'info': 'Planning grid deleted'})
-        except ServicesError as e:
-            raise_error(self, e.args[0])
-
 
 
 class getAllSpeciesData(BaseHandler):
@@ -1397,7 +1311,6 @@ class getAllSpeciesData(BaseHandler):
                                 "data": self.allSpeciesData.to_dict(orient="records")})
         except ServicesError as e:
             raise_error(self, e.args[0])
-
 
 
 class getPlanningUnitsCostData(BaseHandler):
@@ -1495,7 +1408,6 @@ class updateCosts(BaseHandler):
             raise_error(self, e.args[0])
 
 
-
 class deleteCost(BaseHandler):
     """REST HTTP handler. Deletes a cost profile. The required arguments in the request.arguments parameter are:
 
@@ -1533,7 +1445,6 @@ class deleteCost(BaseHandler):
             raise_error(self, e.args[0])
 
 
-
 class getMarxanLog(BaseHandler):
     """REST HTTP handler. Gets the Marxan log for the project. Currently not used. The required arguments in the request.arguments parameter are:
 
@@ -1558,7 +1469,6 @@ class getMarxanLog(BaseHandler):
             self.send_response({"log": self.marxanLog})
         except ServicesError as e:
             raise_error(self, e.args[0])
-
 
 
 class GetSolution(BaseHandler):
@@ -1636,7 +1546,6 @@ class GetSolution(BaseHandler):
             raise_error(self, e.args[0])
 
 
-
 class getResults(BaseHandler):
     """REST HTTP handler. Gets the combined results for the project. This includes the Marxan log, the best solution, the output summary and summed solutions. The required arguments in the request.arguments parameter are:
 
@@ -1679,7 +1588,6 @@ class getResults(BaseHandler):
                                 'ssoln': self.summedSolution})
         except (ServicesError):
             self.send_response({'info': 'No results available'})
-
 
 
 class getServerData(BaseHandler):
@@ -1867,8 +1775,6 @@ class UpdatePUFile(BaseHandler):
             raise_error(self, e.args[0])
 
 
-
-
 class getPUData(BaseHandler):
     """REST HTTP handler. Gets the data for a planning unit including a set of features if there are some. The required arguments in the request.arguments parameter are:
 
@@ -1910,7 +1816,6 @@ class getPUData(BaseHandler):
             raise_error(self, e.args[0])
 
 
-
 # not currently used
 class createFeaturePreprocessingFileFromImport(BaseHandler):
     """REST HTTP handler. Used to populate the feature_preprocessing.dat file from an imported PUVSPR file. The required arguments in the request.arguments parameter are:
@@ -1931,11 +1836,13 @@ class createFeaturePreprocessingFileFromImport(BaseHandler):
             # validate the input arguments
             validate_args(self.request.arguments, ['user', 'project'])
             # run the internal routine
-            puvspr_path = os.path.join(self.folder_input, self.projectData["files"]["PUVSPRNAME"])
+            puvspr_path = os.path.join(
+                self.folder_input, self.projectData["files"]["PUVSPRNAME"])
             df = file_data_to_df(puvspr_path)
 
             if df.empty:
-                raise ServicesError("There are no records in the puvspr.dat file.")
+                raise ServicesError(
+                    "There are no records in the puvspr.dat file.")
 
             # Calculate statistics: sum and count for each species
             summary = df.pivot_table(
@@ -1951,15 +1858,15 @@ class createFeaturePreprocessingFileFromImport(BaseHandler):
             summary = summary[['id', 'pu_area', 'pu_count']]
 
             # Save the processed data to the feature_preprocessing.dat file
-            feature_preprocessing_path = os.path.join(self.folder_input, "feature_preprocessing.dat")
-            summary.to_csv(feature_preprocessing_path, index=False)           
-            
+            feature_preprocessing_path = os.path.join(
+                self.folder_input, "feature_preprocessing.dat")
+            summary.to_csv(feature_preprocessing_path, index=False)
+
             # set the response
             self.send_response(
                 {'info': "feature_preprocessing.dat file populated"})
         except ServicesError as e:
             raise_error(self, e.args[0])
-
 
 
 class addParameter(BaseHandler):
@@ -1991,7 +1898,6 @@ class addParameter(BaseHandler):
             raise_error(self, e.args[0])
 
 
-
 class listProjectsForPlanningGrid(BaseHandler):
     """REST HTTP handler. Gets a list of all of the projects that a planning grid is used in. The required arguments in the request.arguments parameter are:
 
@@ -2018,7 +1924,6 @@ class listProjectsForPlanningGrid(BaseHandler):
                 {'info': "Projects info returned", "projects": projects})
         except ServicesError as e:
             raise_error(self, e.args[0])
-
 
 
 class uploadTilesetToMapBox(BaseHandler):
@@ -2111,7 +2016,6 @@ class uploadFile(BaseHandler):
             raise_error(self, e.args[0])
 
 
-
 class unzipShapefile(BaseHandler):
     """REST HTTP handler. Unzips an already uploaded shapefile and returns the rootname. The required arguments in the request.arguments parameter are:
 
@@ -2137,7 +2041,6 @@ class unzipShapefile(BaseHandler):
                 'filename') + "' unzipped", 'rootfilename': rootfilename})
         except ServicesError as e:
             raise_error(self, e.args[0])
-
 
 
 class getShapefileFieldnames(BaseHandler):
@@ -2177,6 +2080,7 @@ class getShapefileFieldnames(BaseHandler):
         except ServicesError as e:
             raise_error(self, e.args[0])
 
+
 class deleteShapefile(BaseHandler):
     """REST HTTP handler. Deletes a zipped shapefile and its unzipped files (if present). The required arguments in the request.arguments parameter are:
 
@@ -2202,7 +2106,6 @@ class deleteShapefile(BaseHandler):
             self.send_response({'info': "Shapefile deleted"})
         except ServicesError as e:
             raise_error(self, e.args[0])
-
 
 
 class stopProcess(BaseHandler):
@@ -2247,7 +2150,6 @@ class stopProcess(BaseHandler):
             raise_error(self, e.args[0])
 
 
-
 class getRunLogs(BaseHandler):
     """REST HTTP handler. Gets the run log. The required arguments in the request.arguments parameter are:
 
@@ -2271,7 +2173,6 @@ class getRunLogs(BaseHandler):
             raise_error(self, e.args[0])
 
 
-
 class clearRunLogs(BaseHandler):
     """REST HTTP handler. Clears the run log. The required arguments in the request.arguments parameter are:
 
@@ -2293,7 +2194,6 @@ class clearRunLogs(BaseHandler):
             self.send_response({'info': "Run log cleared"})
         except ServicesError as e:
             raise_error(self, e.args[0])
-
 
 
 class dismissNotification(BaseHandler):
@@ -2320,7 +2220,6 @@ class dismissNotification(BaseHandler):
             raise_error(self, e.args[0])
 
 
-
 class resetNotifications(BaseHandler):
     """REST HTTP handler. Resets all notification for the currently authenticated user by clearing the "notifications.dat". The required arguments in the request.arguments parameter are:
 
@@ -2341,7 +2240,6 @@ class resetNotifications(BaseHandler):
             self.send_response({'info': "Notifications reset"})
         except ServicesError as e:
             raise_error(self, e.args[0])
-
 
 
 class deleteGapAnalysis(BaseHandler):
@@ -2369,7 +2267,6 @@ class deleteGapAnalysis(BaseHandler):
             self.send_response({'info': "Gap analysis deleted"})
         except ServicesError as e:
             raise_error(self, e.args[0])
-
 
 
 class testRoleAuthorisation(BaseHandler):
@@ -2421,7 +2318,6 @@ class runSQLFile(BaseHandler):
             raise_error(self, e.args[0])
 
 
-
 class cleanup(BaseHandler):
     """REST HTTP handler. Cleans up the database and clumping files. The required arguments in the request.arguments parameter are:
 
@@ -2441,7 +2337,6 @@ class cleanup(BaseHandler):
             self.send_response({'info': "Cleanup succesful"})
         except ServicesError as e:
             raise_error(self, e.args[0])
-
 
 
 class shutdown(BaseHandler):
@@ -2498,6 +2393,7 @@ class testTornado(BaseHandler):
 ####################################################################################################################################################################################################################################################################
 # WebSocketHandler subclasses
 ####################################################################################################################################################################################################################################################################
+
 
 class runMarxan(WebSocketHandler):
     """REST WebSocket Handler. Starts a Marxan run on the server and streams back the output through WebSocket messages. The required arguments in the request.arguments parameter are:
@@ -2572,18 +2468,20 @@ class runMarxan(WebSocketHandler):
                                         "' is blocked by group policy. For more information, contact your system administrator."})
                     else:  # no errors
                         # get the number of runs that were in the input.dat file
-                        
+
                         if not hasattr(self, "projectData"):
                             await get_project_data(pg, self)
 
                         # Extract the NUMREPS value from runParameters
                         num_reps = next(
-                            (int(param['value']) for param in self.projectData['runParameters'] if param['key'] == 'NUMREPS'),
+                            (int(param['value']) for param in self.projectData['runParameters']
+                             if param['key'] == 'NUMREPS'),
                             None
                         )
 
                         if num_reps is None:
-                            raise ValueError("NUMREPS parameter not found in runParameters.")
+                            raise ValueError(
+                                "NUMREPS parameter not found in runParameters.")
 
                         self.numRunsRequired = num_reps
                         # log the run to the run log file
@@ -2664,7 +2562,7 @@ class runMarxan(WebSocketHandler):
                 # write the response depending on if the run completed or not
                 if (numRunsCompleted == self.numRunsRequired):
                     update_run_log(self.marxanProcess.pid, self.startTime,
-                                  numRunsCompleted, self.numRunsRequired, 'Completed')
+                                   numRunsCompleted, self.numRunsRequired, 'Completed')
                     self.close({'info': 'Run completed',
                                 'project': self.project, 'user': self.user})
                 else:  # if the user stopped it then the run log should already have a status of Stopped
@@ -2757,12 +2655,11 @@ class importFeatures(WebSocketHandler):
                     geometryType = await pg.getGeometryType(feature_class_name)
                     source = "Imported shapefile" if (
                         geometryType != 'ST_Point') else "Imported shapefile (points)"
-                    
+
                     id = await finish_feature_import(feature_class_name, feature_name, description, source, self.get_current_user())
                     # start the upload to mapbox
                     uploadId = await upload_tileset_to_mapbox(feature_class_name, feature_class_name)
-                    
-                    
+
                     # append the uploadId to the uploadIds array
                     uploadIds.append(uploadId)
                     self.send_response({'id': id, 'feature_class_name': feature_class_name, 'uploadId': uploadId,
@@ -2810,7 +2707,7 @@ class importGBIFData(WebSocketHandler):
         This function creates or replaces the specified table in the 'marxan' schema
         with the contents of the given DataFrame. It uses a specific connection string
         and is not asynchronous.
-        """    
+        """
         db_url = (
             f"postgresql://{db_config.DATABASE_USER}:"
             f"{db_config.DATABASE_PASSWORD}@"
@@ -2819,7 +2716,8 @@ class importGBIFData(WebSocketHandler):
         )
         engine = create_engine(db_url)
         # Import the DataFrame to the specified table
-        df.to_sql(f"marxan.{table_name}", con=engine, if_exists='replace', index=False)
+        df.to_sql(f"marxan.{table_name}", con=engine,
+                  if_exists='replace', index=False)
 
     async def open(self):
         """Manages the GBIF import from downloading the data to importing into PostGIS.
@@ -2851,12 +2749,11 @@ class importGBIFData(WebSocketHandler):
                     vernacularNames = self.getVernacularNames(taxonKey)
                     description = self.getCommonName(vernacularNames)
                     # add an index and a record in the metadata_interest_features table and start the upload to mapbox
-                    
+
                     id = await finish_feature_import(feature_class_name, feature_name, description, "Imported from GBIF", self.get_current_user())
                     # start the upload to mapbox
                     uploadId = await upload_tileset_to_mapbox(feature_class_name, feature_class_name)
-                    
-                    
+
                     self.send_response({'id': id, 'feature_class_name': feature_class_name, 'uploadId': uploadId,
                                         'info': "Feature '" + feature_name + "' imported", 'status': 'FeatureCreated'})
                     # complete
@@ -3016,7 +2913,7 @@ class createFeaturesFromWFS(WebSocketHandler):
             "uploadId": The Mapbox tileset upload id
         }
     """
-    
+
     @staticmethod
     def get_gml(endpoint, featuretype):
         """Gets the gml data using the WFS endpoint and feature type
@@ -3027,7 +2924,8 @@ class createFeaturesFromWFS(WebSocketHandler):
         Returns:
             string: The gml as a text string.
         """
-        response = requests.get(f"{endpoint}&request=getfeature&typeNames={featuretype}")
+        response = requests.get(
+            f"{endpoint}&request=getfeature&typeNames={featuretype}")
         return response.text
 
     async def open(self):
@@ -3057,8 +2955,7 @@ class createFeaturesFromWFS(WebSocketHandler):
                 id = await finish_feature_import(feature_class_name, self.get_argument('name'), self.get_argument('description'), "imported from web service", self.get_current_user())
                 # start the upload to mapbox
                 uploadId = await upload_tileset_to_mapbox(feature_class_name, feature_class_name)
-                            
-                
+
                 self.send_response({'id': id, 'feature_class_name': feature_class_name, 'uploadId': uploadId,
                                     'info': "Feature '" + self.get_argument('name') + "' imported", 'status': 'FeatureCreated'})
                 # complete
@@ -3276,11 +3173,11 @@ class ImportProject(WebSocketHandler):
                     self.send_response(
                         {'status': 'Preprocessing', 'info': f"Importing {row['alias']}"})
                     await finish_feature_import(row['feature_class_name'],
-                                                  row['alias'],
-                                                  row['description'],
-                                                  f"Imported with project {
-                                                      user}/{project}",
-                                                  user)
+                                                row['alias'],
+                                                row['description'],
+                                                f"Imported with project {
+                        user}/{project}",
+                        user)
                 else:
                     self.send_response({'status': 'Preprocessing', 'info': f"{
                                        row['alias']} already exists - skipping"})
@@ -4630,42 +4527,40 @@ class Application(tornado.web.Application):
 
         return [
             ("/server/auth", AuthHandler),
-            (r"/server/projects", ProjectHandler, dict(pg=pg, 
-                                    get_species_data=get_species_data, 
-                                    update_species=update_species_file)),
+            ("/server/projects", ProjectHandler, dict(pg=pg,
+             get_species_data=get_species_data, update_species=update_species_file)),
             ("/server/exportProject", exportProject),
             ("/server/importProject", ImportProject),
-            (r"/server/users", UserHandler, dict(pg=pg)),
-            (r"/server/features", FeatureHandler, dict(pg=pg, 
-                                                       finish_feature_import=finish_feature_import, 
-                                                       upload_tileset_to_mapbox=upload_tileset_to_mapbox))
-            (r"/server/planning-units", PlanningUnitHandler, dict(pg=pg, upload_tileset=upload_tileset)
+            ("/server/users", UserHandler, dict(pg=pg)),
+            ("/server/features", FeatureHandler, dict(pg=pg, finish_feature_import=finish_feature_import,
+             upload_tileset_to_mapbox=upload_tileset_to_mapbox)),
+            ("/server/planning-units", PlanningUnitHandler,
+             dict(pg=pg, upload_tileset=upload_tileset)),
 
             ("/server/updateCosts", updateCosts),
             ("/server/deleteCost", deleteCost),
             ("/server/createCostsFromImpact", CreateCostsFromImpactHandler),
-            
-            
+
+
 
             ("/server/createFeaturePreprocessingFileFromImport",
              createFeaturePreprocessingFileFromImport),
-            
+
 
             ("/server/importFeatures", importFeatures),
             ("/server/createFeaturesFromWFS", createFeaturesFromWFS),
-       
+
 
             ("/server/deleteShapefile", deleteShapefile),
-            
-            ("/server/createPlanningUnitGrid", createPlanningUnitGrid), #websocket
-            ("/server/createMarinePlanningUnitGrid",createMarinePlanningUnitGridHandler), # websocket
-            
-            
-            ("/server/deletePlanningUnitGrid", DeletePlanningUnitGrid),
-            ("/server/exportPlanningUnitGrid", exportPlanningUnitGrid),
+
+            ("/server/createPlanningUnitGrid", createPlanningUnitGrid),  # websocket
+            ("/server/createMarinePlanningUnitGrid",
+             createMarinePlanningUnitGridHandler),  # websocket
+
+
             ("/server/getPlanningUnitGrids", getPlanningUnitGrids),
             ("/server/importPlanningUnitGrid", ImportPlanningUnitGrid),
-            ("/server/listProjectsForPlanningGrid",listProjectsForPlanningGrid),
+            ("/server/listProjectsForPlanningGrid", listProjectsForPlanningGrid),
             ("/server/getPlanningUnitsCostData", getPlanningUnitsCostData),
             ("/server/updatePUFile", UpdatePUFile),
             ("/server/getPUData", getPUData),
@@ -4676,8 +4571,8 @@ class Application(tornado.web.Application):
             ("/server/getActivities", GetActivitiesHandler),
             ("/server/getAllImpacts", GetAllImpactsHandler),
             ("/server/getCountries", getCountries),
-            
-            
+
+
             ("/server/getAllSpeciesData", getAllSpeciesData),
             ("/server/updateSpecFile", updateSpecFile),
 
@@ -4688,9 +4583,6 @@ class Application(tornado.web.Application):
             ("/server/getShapefileFieldnames", getShapefileFieldnames),
 
 
-            
-            
-            
             # currently not used - bugs in the Marxan output log
             ("/server/getMarxanLog", getMarxanLog),
             ("/server/getResults", getResults),
@@ -4706,7 +4598,7 @@ class Application(tornado.web.Application):
             ("/server/updateWDPA", updateWDPA),
             ("/server/runGapAnalysis", runGapAnalysis),
             ("/server/deleteGapAnalysis", deleteGapAnalysis),
-            
+
             ("/server/importGBIFData", importGBIFData),
             ("/server/dismissNotification", dismissNotification),
             ("/server/resetNotifications", resetNotifications),
@@ -4726,8 +4618,9 @@ class Application(tornado.web.Application):
 
             ("/server/uploadFile", uploadFile),
 
- 
-            ("/server/exports/(.*)", StaticFileHandler, {"path": project_paths.EXPORT_FOLDER}),
+
+            ("/server/exports/(.*)", StaticFileHandler,
+             {"path": project_paths.EXPORT_FOLDER}),
             # default handler if the REST services is cannot be found on this server - maybe a newer client is requesting a method on an old server
             ("/server/(.*)", methodNotFound),
             # assuming the marxan-client is installed in the same folder as the marxan-server all files will go to the client build folder
