@@ -171,12 +171,15 @@ class UserHandler(BaseHandler):
     async def get_user(self):
         self.validate_args(self.request.arguments, ["user"])
 
-        self.get_user_data(self)
+        query = """
+                SELECT id, username, password_hash, role, last_project, show_popup, basemap, use_feature_colours, report_units, refresh_tokens 
+                FROM users WHERE username = $1
+            """
+        userData = await self.pg.execute(query, [self.get_current_user()], return_format="Dict")
         notifications = get_notifications_data(self)
-
         self.send_response({
             'info': "User data received",
-            "userData": self.userData,
+            "userData": userData,
             "unauthorisedMethods": [],
             'dismissedNotifications': notifications
         })

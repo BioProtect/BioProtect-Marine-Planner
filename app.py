@@ -67,7 +67,7 @@ from services.project_service import (get_project_data,
 from services.run_command_service import run_command
 from services.service_error import ServicesError, raise_error
 from services.user_service import (
-    dismiss_notification, get_users, reset_notifications)
+    get_notifications_data, dismiss_notification, get_users, reset_notifications)
 from handlers.base_handler import BaseHandler
 from handlers.user_handler import UserHandler
 from handlers.project_handler import ProjectHandler
@@ -1049,7 +1049,6 @@ class AuthHandler(BaseHandler):
     async def post(self):
         try:
             # comment:
-            print(self.request.body)
             body = json_decode(self.request.body)
             username = body.get("user")
             pwd = body.get("pwd")
@@ -1060,12 +1059,14 @@ class AuthHandler(BaseHandler):
                 return
 
             # Query user from PostgreSQL
-            query = "SELECT id, username, password_hash, role, refresh_tokens FROM users WHERE username = $1"
+            query = """
+                SELECT id, username, password_hash, role, last_project, show_popup, basemap, use_feature_colours, report_units, refresh_tokens 
+                FROM users WHERE username = $1
+            """
             result = await pg.execute(query, [username], return_format="Dict")
-            print('result: ', result)
+            notifications = get_notifications_data(self)
 
             if not result:
-                print("no result........")
                 self.set_status(401)
                 self.write({"message": "Unauthorized."})
                 return
@@ -1078,35 +1079,56 @@ class AuthHandler(BaseHandler):
                 self.write({"message": "Unauthorized."})
                 return
 
+            # Remove expired refresh tokens
+            now = datetime.now()
+            valid_refresh_tokens = []
+            for token in user["refresh_tokens"] or []:
+                try:
+                    decoded_token = jwt.decode(token, self.proj_paths.gis_config.get(
+                        "refresh_token"), algorithms=["HS256"])
+                    if datetime.fromtimestamp(decoded_token["exp"]) > now:
+                        valid_refresh_tokens.append(token)
+                except jwt.ExpiredSignatureError:
+                    continue  # Ignore expired tokens
+                except jwt.InvalidTokenError:
+                    continue  # Ignore invalid tokens
+
             # Generate tokens
-            role = user["role"] or ""
             access_token = jwt.encode({
-                "UserInfo": {"username": user["username"], "role": role},
-                "exp": datetime.now() + timedelta(seconds=10),
+                "UserInfo": {"username": user["username"], "role": user["role"] or ""},
+                "exp": now + timedelta(seconds=10),
             }, project_paths.gis_config.get("access_token"),  algorithm="HS256")
 
             refresh_token = jwt.encode({
                 "username": user["username"],
-                "exp": datetime.now() + timedelta(seconds=15),
+                "exp": now + timedelta(seconds=15),
             }, project_paths.gis_config.get("refresh_token"), algorithm="HS256")
 
+            valid_refresh_tokens.append(refresh_token)
+
             # Update refresh tokens in the database
-            new_refresh_tokens = user["refresh_tokens"] or []
-            new_refresh_tokens.append(refresh_token)
             update_query = "UPDATE users SET refresh_tokens = $1 WHERE id = $2"
-            await pg.execute(update_query, [new_refresh_tokens, user["id"]])
+            await pg.execute(update_query, [valid_refresh_tokens, user["id"]])
 
             # Set secure cookie for refresh token
-            self.set_cookie(
-                "jwt", refresh_token,
-                httponly=True, secure=True, samesite="None"
-            )
+            self.set_cookie("jwt", refresh_token, httponly=True,
+                            secure=True, samesite="None")
 
-            # Respond with access token
-            self.write({"userId": user['id'], "accessToken": access_token})
+            # Remove sensitive fields before sending user data
+            user.pop("password_hash")
+            user.pop("refresh_tokens")
 
+            # Respond with access token and user data
+            self.write({
+                "userId": user['id'],
+                "accessToken": access_token,
+                "userData": user,
+                # Send user data along with authentication
+                "dismissedNotification": notifications
+            })
         except ServicesError as e:
             raise_error(self, e.args[0])
+
         # end try
 
 
