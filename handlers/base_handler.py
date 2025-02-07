@@ -5,6 +5,8 @@ import traceback
 from classes.folder_path_config import get_folder_path_config
 from tornado.web import RequestHandler
 from services.service_error import ServicesError, raise_error
+from datetime import datetime
+
 
 proj_paths = get_folder_path_config()
 
@@ -65,16 +67,23 @@ class BaseHandler(RequestHandler):
         Returns:
             None
         """
+        # Convert datetime objects to string
+        def json_serial(obj):
+            if isinstance(obj, datetime):
+                return obj.isoformat()  # Convert to string format
+            raise TypeError(f"Type {type(obj)} not serializable")
+
         try:
             self.set_header('Content-Type', 'application/json')
-            content = json.dumps(response)
+            content = json.dumps(response, default=json_serial)
+
         except (UnicodeDecodeError) as e:
             if 'log' in response:
                 response.update({
                     "log": f"Server warning: Unable to encode the Marxan log. <br/>{repr(e)}",
                     "warning": "Unable to encode the Marxan log"
                 })
-                content = json.dumps(response)
+                content = json.dumps(response, default=json_serial)
         finally:
             if "callback" in self.request.arguments:
                 callback = self.get_argument("callback")

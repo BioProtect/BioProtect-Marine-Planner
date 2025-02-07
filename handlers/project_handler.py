@@ -267,6 +267,8 @@ class ProjectHandler(BaseHandler):
     # GET /projects?action=get&user=username&project=project_name
     async def get_project(self):
         project = self.get_argument('project')
+        print('project: ', project)
+        print('project: ', project)
 
         if not exists(self.folder_project):
             raise ServicesError(f"The project '{project}' does not exist")

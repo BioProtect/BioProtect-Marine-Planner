@@ -1064,7 +1064,7 @@ class AuthHandler(BaseHandler):
                 FROM users WHERE username = $1
             """
             result = await pg.execute(query, [username], return_format="Dict")
-            notifications = get_notifications_data(self)
+            # notifications = get_notifications_data(self)
 
             if not result:
                 self.set_status(401)
@@ -1118,13 +1118,22 @@ class AuthHandler(BaseHandler):
             user.pop("password_hash")
             user.pop("refresh_tokens")
 
+            # Fetch user's projects
+            project_query = """
+                SELECT id, name, description, date_created 
+                FROM projects WHERE user_id = $1
+            """
+            project_result = await pg.execute(project_query, [user['id']], return_format="Dict")
+            print('project_result: ', project_result)
+
             # Respond with access token and user data
-            self.write({
+            self.send_response({
                 "userId": user['id'],
                 "accessToken": access_token,
                 "userData": user,
+                "project": project_result[0],
                 # Send user data along with authentication
-                "dismissedNotification": notifications
+                # "dismissedNotification": notifications
             })
         except ServicesError as e:
             raise_error(self, e.args[0])
@@ -4550,14 +4559,16 @@ class Application(tornado.web.Application):
         return [
             ("/server/auth", AuthHandler),
             ("/server/projects", ProjectHandler, dict(pg=pg,
-             get_species_data=get_species_data, update_species=update_species_file)),
+                                                      get_species_data=get_species_data,
+                                                      update_species=update_species_file)),
             ("/server/exportProject", exportProject),
             ("/server/importProject", ImportProject),
             ("/server/users", UserHandler, dict(pg=pg)),
-            ("/server/features", FeatureHandler, dict(pg=pg, finish_feature_import=finish_feature_import,
-             upload_tileset_to_mapbox=upload_tileset_to_mapbox)),
-            ("/server/planning-units", PlanningUnitHandler,
-             dict(pg=pg, upload_tileset=upload_tileset)),
+            ("/server/features", FeatureHandler, dict(pg=pg,
+                                                      finish_feature_import=finish_feature_import,
+                                                      upload_tileset_to_mapbox=upload_tileset_to_mapbox)),
+            ("/server/planning-units", PlanningUnitHandler, dict(pg=pg,
+                                                                 upload_tileset=upload_tileset)),
 
             ("/server/updateCosts", updateCosts),
             ("/server/deleteCost", deleteCost),
