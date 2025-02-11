@@ -14,6 +14,7 @@ from services.file_service import (check_zipped_shapefile,
 from services.project_service import set_folder_paths, write_csv
 from services.service_error import ServicesError, raise_error
 from handlers.base_handler import BaseHandler
+from services.queries import get_pu_grids_query
 
 
 class PlanningUnitHandler(BaseHandler):
@@ -23,6 +24,7 @@ class PlanningUnitHandler(BaseHandler):
     """
 
     def initialize(self, pg, upload_tileset):
+        super().initialize()
         self.pg = pg
         self.upload_tileset = upload_tileset
 
@@ -150,7 +152,7 @@ class PlanningUnitHandler(BaseHandler):
         })
 
     async def get_planning_unit_grids(self):
-        planning_unit_grids = await get_pu_grids()
+        planning_unit_grids = await self.pg.execute(get_pu_grids_query, return_format="Dict")
         self.send_response({
             'info': 'Planning unit grids retrieved',
             'planning_unit_grids': planning_unit_grids

@@ -26,6 +26,7 @@ from subprocess import PIPE, CalledProcessError, Popen
 from threading import Thread
 from urllib import request
 from urllib.parse import urlparse
+import shlex
 
 import aiopg
 import colorama
@@ -150,7 +151,7 @@ LOGGING_LEVEL = logging.INFO
 
 # pdoc3 dict to whitelist private members for the documentation
 __pdoc__ = {}
-privateMembers = ['getGeometryType', 'add_parameter_to_file', 'check_zipped_shapefile', 'cleanup', 'clone_project', 'create_user', 'create_zipfile', 'delete_all_files', 'delete_archive_files', '_deleteFeature',  'delete_records_in_text_file', 'del_tileset', 'delete_zipped_shapefile', 'dismiss_notification',  'finish_feature_import', '_getAllProjects', 'get_dict_value', 'get_files_in_folder',   'get_key_value', 'get_keys', 'get_marxan_log', 'get_notifications_data', 'get_output_filename', 'get_pu_grids', 'get_project_data', 'get_projects_for_feature', 'get_projects_for_user', 'get_run_logs',
+privateMembers = ['getGeometryType', 'add_parameter_to_file', 'check_zipped_shapefile', 'cleanup', 'clone_project', 'create_user', 'create_zipfile', 'delete_all_files', 'delete_archive_files', '_deleteFeature',  'delete_records_in_text_file', 'del_tileset', 'delete_zipped_shapefile', 'dismiss_notification',  'finish_feature_import', '_getAllProjects', 'get_dict_value', 'get_files_in_folder',   'get_key_value', 'get_keys', 'get_marxan_log', 'get_notifications_data', 'get_output_filename', 'get_project_data', 'get_projects_for_feature', 'get_projects_for_user', 'get_run_logs',
                   'get_safe_project_name', 'get_species_data', 'get_unique_feature_name', 'get_user_data', 'get_users', 'get_users_data', 'normalize_dataframe', 'pad_dict', '_preprocessProtectedAreas', 'puid_array_to_df', 'raise_error', 'read_file', '_reprocessProtectedAreas', 'reset_notifications', 'run_command', '_setCORS', 'set_folder_paths', 'set_global_vars', 'unzip_file', 'unzip_shapefile', 'update_dataframe', 'update_file_parameters', 'update_run_log', 'update_species_file', '_uploadTileset', 'upload_tileset_to_mapbox', 'validate_args', 'write_csv', 'write_to_file', 'write_df_to_file', 'zip_folder']
 
 for m in privateMembers:
@@ -315,37 +316,6 @@ def file_data_to_df(file_name):
         DataFrame: The data from the file.
     """
     return pd.read_csv(file_name, sep=None, engine='python') if os.path.exists(file_name) else pd.DataFrame()
-
-
-async def get_pu_grids():
-    """
-    Retrieves the data for all planning grids.
-
-    Returns:
-        list[dict]: A list of dictionaries containing planning grid data.
-    """
-    query = """
-        SELECT DISTINCT
-            alias,
-            feature_class_name,
-            description,
-            to_char(creation_date, 'DD/MM/YY HH24:MI:SS')::text AS creation_date,
-            country_id,
-            aoi_id,
-            domain,
-            _area,
-            ST_AsText(envelope) AS envelope,
-            pu.source,
-            original_n AS country,
-            created_by,
-            tilesetid,
-            planning_unit_count
-        FROM marxan.metadata_planning_units pu
-        LEFT OUTER JOIN marxan.gaul_2015_simplified_1km
-        ON id_country = country_id
-        ORDER BY alias;
-    """
-    return await pg.execute(query, return_format="Dict")
 
 
 async def process_protected_areas(obj, planning_grid_name=None, folder=None):
@@ -1060,7 +1030,7 @@ class AuthHandler(BaseHandler):
 
             # Query user from PostgreSQL
             query = """
-                SELECT id, username, password_hash, role, last_project, show_popup, basemap, use_feature_colours, report_units, refresh_tokens 
+                SELECT id, username, password_hash, role, last_project, show_popup, basemap, use_feature_colours, report_units, refresh_tokens
                 FROM users WHERE username = $1
             """
             result = await pg.execute(query, [username], return_format="Dict")
@@ -1120,7 +1090,7 @@ class AuthHandler(BaseHandler):
 
             # Fetch user's projects
             project_query = """
-                SELECT id, name, description, date_created 
+                SELECT id, name, description, date_created
                 FROM projects WHERE user_id = $1
             """
             project_result = await pg.execute(project_query, [user['id']], return_format="Dict")
@@ -1178,10 +1148,7 @@ class getPlanningUnitGrids(BaseHandler):
 
     async def get(self):
         try:
-            planningUnitGrids = await get_pu_grids()
-            self.send_response(
-                {'info': 'Planning unit grids retrieved',
-                 'planning_unit_grids': planningUnitGrids})
+            self.send_response({'info': 'Planning unit grids retrieved'})
         except ServicesError as e:
             raise_error(self, e.args[0])
 
@@ -1350,7 +1317,7 @@ class getPlanningUnitsCostData(BaseHandler):
     Args:
         user (string): The name of the user.
         project (string): The name of the project.
-    Returns:    
+    Returns:
         A dict with the following structure (if the class raises an exception, the error message is included in an 'error' key/value pair):
 
         {
@@ -2830,7 +2797,7 @@ class importGBIFData(WebSocketHandler):
             _json = json.loads(response)
             # get the lat longs
             data = [OrderedDict({'eventDate': item['eventDate'] if 'eventDate' in item.keys() else None, 'gbifID': item['gbifID'],
-                                 'lng': item['decimalLongitude'], 'lat': item['decimalLatitude'], 'geometry': ''}) for item in _json['results']]
+                                'lng': item['decimalLongitude'], 'lat': item['decimalLatitude'], 'geometry': ''}) for item in _json['results']]
             # append them to the list
             latLongs.extend(data)
             fetched.add(current_url)
@@ -3037,61 +3004,111 @@ class exportProject(WebSocketHandler):
             validate_args(self.request.arguments, ['user', 'project'])
             self.send_response(
                 {'status': 'Preprocessing', 'info': "Copying project folder.."})
-            # create a folder in the export folder to hold all the files
-            exportFolder = project_paths.EXPORT_FOLDER + \
-                self.get_argument('user') + "_" + self.get_argument('project')
-            # remote the folder if it already exists
-            if os.path.exists(exportFolder):
-                shutil.rmtree(exportFolder)
-            # copy the project folder
-            shutil.copytree(self.folder_project, exportFolder)
-            # FEATURES
-            # get the species data from the spec.dat file and the PostGIS database
-            await get_species_data(self)
-            # get the feature class names that must be exported from postgis
-            feature_class_names = self.speciesData['feature_class_name'].tolist(
-            )
-            # export all of the feature classes as shapefiles
-            self.send_response(
-                {'status': 'Preprocessing', 'info': "Exporting features.."})
-            cmd = '"' + db_config.OGR2OGR_EXECUTABLE + '" -f "ESRI Shapefile" "' + exportFolder + os.sep + EXPORT_F_SHP_FOLDER + os.sep + '" PG:"host=' + db_config.DATABASE_HOST + \
-                ' user=' + db_config.DATABASE_USER + ' dbname=' + db_config.DATABASE_NAME + ' password=' + \
-                db_config.DATABASE_PASSWORD + ' ACTIVE_SCHEMA=marxan" ' + \
-                " ".join(feature_class_names)
-            await run_command(cmd)
-            # export the features metadata
-            self.send_response(
-                {'status': 'Preprocessing', 'info': "Exporting feature metadata.."})
-            escapedFeatureNames = "\'" + \
-                "\',\'".join(feature_class_names) + "\'"
-            cmd = '"' + db_config.OGR2OGR_EXECUTABLE + '" -f "CSV" "' + exportFolder + os.sep + EXPORT_F_METADATA + '" PG:"host=' + db_config.DATABASE_HOST + ' user=' + db_config.DATABASE_USER + ' dbname=' + db_config.DATABASE_NAME + ' password=' + db_config.DATABASE_PASSWORD + \
-                ' ACTIVE_SCHEMA=marxan" -sql "SELECT oid, feature_class_name, alias, description FROM metadata_interest_features WHERE feature_class_name = ANY (ARRAY[' + \
-                escapedFeatureNames + ']);" -lco SEPARATOR=TAB'
-            await run_command(cmd)
-            # PLANNING GRIDS
-            # export the planning unit grid
-            pu_name = self.projectData['metadata']['PLANNING_UNIT_NAME']
-            self.send_response(
-                {'status': 'Preprocessing', 'info': "Exporting planning grid.."})
-            await pg.exportToShapefile(exportFolder + os.sep + EXPORT_PU_SHP_FOLDER + os.sep, pu_name)
-            # export the planning grid metadata - convert the envelope geometry field to text
-            self.send_response(
-                {'status': 'Preprocessing', 'info': "Exporting planning grid metadata.."})
-            cmd = '"' + db_config.OGR2OGR_EXECUTABLE + '" -f "CSV" "' + exportFolder + os.sep + EXPORT_PU_METADATA + '" PG:"host=' + db_config.DATABASE_HOST + ' user=' + db_config.DATABASE_USER + ' dbname=' + db_config.DATABASE_NAME + ' password=' + db_config.DATABASE_PASSWORD + \
-                ' ACTIVE_SCHEMA=marxan" -sql "SELECT feature_class_name, alias, description, country_id, aoi_id, domain, _area, ST_AsText(envelope) envelope, creation_date, source, created_by, tilesetid, planning_unit_count FROM marxan.metadata_planning_units WHERE feature_class_name = \'' + \
-                pu_name + '\';" -lco SEPARATOR=TAB'
-            await run_command(cmd)
-            # zip the whole folder
-            self.send_response(
-                {'status': 'Preprocessing', 'info': "Zipping project.."})
-            await IOLoop.current().run_in_executor(None, zip_folder, exportFolder, exportFolder)
-            # rename with a mxw extension
-            os.rename(exportFolder + ".zip", exportFolder + ".mxw")
-            # delete the folder
-            shutil.rmtree(exportFolder)
-            # return the results
-            self.close({'info': "Export project complete", 'filename': self.get_argument(
-                'user') + "_" + self.get_argument('project') + ".mxw"})
+
+            user = self.get_argument('user')
+            project = self.get_argument('project')
+            export_folder = os.path.join(
+                project_paths.EXPORT_FOLDER, f"{user}_{project}")
+
+            # ✅ Step 1: Prepare export folder
+            await prepare_export_folder(export_folder, self.folder_project)
+
+            # ✅ Step 2: Export Features
+            await export_features(self, export_folder)
+
+            # ✅ Step 3: Export Planning Unit Grids
+            await export_planning_unit_grids(self, export_folder)
+
+            # ✅ Step 4: Zip the Project
+            await zip_project(export_folder)
+
+            # ✅ Step 5: Final Response
+            self.close({'info': "Export project complete",
+                       'filename': f"{user}_{project}.mxw"})
+
+            async def prepare_export_folder(export_folder, folder_project):
+                # remote the folder if it already exists
+                if os.path.exists(export_folder):
+                    shutil.rmtree(export_folder)
+                # copy the project folder
+                shutil.copytree(folder_project, export_folder)
+
+            async def export_features(self, export_folder):
+                self.send_response(
+                    {'status': 'Preprocessing', 'info': "Exporting features..."})
+                await get_species_data(self)
+                feature_classnames = self.speciesData['feature_class_name'].tolist(
+                )
+                # ✅ Export shapefiles
+                db_connection = format_db_connection()
+                shapefile_output_path = os.path.join(
+                    export_folder, EXPORT_F_SHP_FOLDER)
+                await run_ogr2ogr(db_config.OGR2OGR_EXECUTABLE,
+                                  "-f", "ESRI Shapefile",
+                                  shapefile_output_path, db_connection,
+                                  *feature_classnames)
+                # export all of the feature classes as shapefiles
+                # ✅ Export feature metadata as CSV
+                self.send_response(
+                    {'status': 'Preprocessing', 'info': "Exporting feature metadata..."})
+                escaped_names = "', '".join(feature_classnames)
+                sql_query = f"""
+                    SELECT unique_id, feature_class_name, alias, description 
+                    FROM metadata_interest_features 
+                    WHERE feature_class_name = ANY (ARRAY['{escaped_names}']);
+                """
+                csv_output_path = os.path.join(
+                    export_folder, EXPORT_F_METADATA)
+                await run_ogr2ogr(db_config.OGR2OGR_EXECUTABLE,
+                                  "-f", "CSV",
+                                  csv_output_path, db_connection,
+                                  "-sql", sql_query, "-lco", "SEPARATOR=TAB")
+
+            async def export_planning_unit_grids(self, export_folder):
+                """Exports planning unit grid and metadata."""
+                self.send_response(
+                    {'status': 'Preprocessing', 'info': "Exporting planning grid..."})
+
+                # ✅ Fetch planning unit grid
+                pu_name = self.projectData['metadata']['PLANNING_UNIT_NAME']
+                await pg.exportToShapefile(os.path.join(export_folder, EXPORT_PU_SHP_FOLDER), pu_name)
+
+                # ✅ Export planning unit grid metadata
+                self.send_response(
+                    {'status': 'Preprocessing', 'info': "Exporting planning grid metadata..."})
+                sql_query = f"""
+                    SELECT feature_class_name, alias, description, country_id, aoi_id, domain, _area, 
+                        ST_AsText(envelope) AS envelope, creation_date, source, created_by, 
+                        tilesetid, planning_unit_count 
+                    FROM marxan.metadata_planning_units 
+                    WHERE feature_class_name = '{pu_name}';
+                """
+
+                csv_output_path = os.path.join(
+                    export_folder, EXPORT_PU_METADATA)
+                db_connection = format_db_connection()
+                await run_ogr2ogr(db_config.OGR2OGR_EXECUTABLE, "-f", "CSV", csv_output_path, db_connection, "-sql", sql_query, "-lco", "SEPARATOR=TAB")
+
+            async def zip_project(export_folder):
+                """Zips the project folder and renames it with .mxw extension."""
+                self.send_response(
+                    {'status': 'Preprocessing', 'info': "Zipping project..."})
+                await IOLoop.current().run_in_executor(None, zip_folder, export_folder, export_folder)
+
+                # ✅ Rename the file with .mxw extension
+                os.rename(export_folder + ".zip", export_folder + ".mxw")
+                shutil.rmtree(export_folder)  # Remove original folder
+
+            async def run_ogr2ogr(*args):
+                """Runs an ogr2ogr command asynchronously."""
+                cmd_parts = [shlex.quote(str(arg))
+                             for arg in args]  # Escape each argument
+                cmd = " ".join(cmd_parts)
+                await run_command(cmd)  # Execute command
+
+            def format_db_connection():
+                """Formats the PostgreSQL database connection string for ogr2ogr."""
+                return f"PG:host={db_config.DATABASE_HOST} user={db_config.DATABASE_USER} dbname={db_config.DATABASE_NAME} password={db_config.DATABASE_PASSWORD} ACTIVE_SCHEMA=marxan"
 
 
 class ImportProject(WebSocketHandler):
@@ -3642,8 +3659,8 @@ class createPlanningUnitGrid(QueryWebSocketHandler):
             domain = self.get_argument('domain')
             shape = self.get_argument('shape')
             # get the feature class name
-            fc = "pu_" + iso3.lower() + "_" + domain.lower() + "_" + \
-                shape.lower() + "_" + areakm2
+            fc = f"pu_{iso3.lower()}_{domain.lower()}_{shape.lower()}_{areakm2}"
+
             # see if the planning grid already exists
             records = await pg.execute(
                 "SELECT * FROM marxan.metadata_planning_units WHERE feature_class_name =(%s);",
@@ -4185,8 +4202,8 @@ class UploadRasterHandler(BaseHandler):
                 for pressure in pad_data:
                     new_band = band.copy()
                     update_band = new_band*pressure[2]
-                    title = 'data/pressures/' + \
-                        replace_chars(pressure[1]) + '.tif'
+                    title = f"data/pressures/{replace_chars(pressure[1])}.tif"
+
                     with rasterio.open(title, 'w', **meta) as dst:
                         dst.write(update_band, 1)
 
@@ -4248,9 +4265,13 @@ class SaveRasterHandler(WebSocketHandler):
             activity_name = get_unique_feature_name("activity_")
             connection = psql_str()
             try:
-                cmds = "raster2pgsql -s 100026 -d -I -C -F " + raster_loc + \
-                    " marxan." + activity_name + connection
-                subprocess.call(cmds, shell=True)
+                cmds = [
+                    "raster2pgsql", "-s", "100026", "-d", "-I", "-C", "-F",
+                    raster_loc, f"marxan.{activity_name}", connection
+                ]
+                # check=True ensures an error is raised if the command fails
+                subprocess.run(cmds, check=True)
+
             except TypeError as e:
                 print('e: ', e)
                 self.close({
@@ -4373,9 +4394,12 @@ class CumulativeImpactHandler(WebSocketHandler):
             try:
                 self.send_response(
                     {'info': 'Saving cumulative impact raster to database...'})
-                cmds = "raster2pgsql -s 4326 -c -I -C -F " + wgs84_rast + \
-                    " marxan." + feature_class_name + connect_str
-                subprocess.call(cmds, shell=True)
+                cmds = [
+                    "raster2pgsql", "-s", "4326", "-c", "-I", "-C", "-F",
+                    wgs84_rast, f"marxan.{feature_class_name}", connect_str
+                ]
+
+                subprocess.run(cmds, check=True)
             except TypeError as e:
                 self.send_response(
                     {'error': 'Unable to save Cumulative Impact raster to database...'})
@@ -4438,15 +4462,27 @@ class CreateCostsFromImpactHandler(WebSocketHandler):
 
 
 def add_shapefile_to_db(filename, gridname, tablename):
-    print('Adding filename: ', filename, " to database...")
-    print('"| psql -h " + DATABASE_HOST + " -p " + db_config.PORT + \
-            " -U " + DATABASE_USER + " -d " + DATABASE_NAME: ', "| psql -h " + db_config.DATABASE_HOST + " -p 5432 -U " + db_config.DATABASE_USER + " -d " + db_config.DATABASE_NAME)
     try:
-        cmds = "shp2pgsql -d -g geom -I " + filename + " " + tablename +  \
-            "| psql -h " + db_config.DATABASE_HOST + " -p 5432 -U " + \
-            db_config.DATABASE_USER + " -d " + db_config.DATABASE_NAME
+        shp2pgsql_cmd = [
+            "shp2pgsql", "-d", "-g", "geom", "-I",
+            filename, tablename
+        ]
 
-        subprocess.call(cmds, shell=True)
+        # Build psql command
+        psql_cmd = [
+            "psql", "-h", db_config.DATABASE_HOST, "-p", "5432",
+            "-U", db_config.DATABASE_USER, "-d", db_config.DATABASE_NAME
+        ]
+
+        # Run shp2pgsql and pipe its output into psql
+        shp2pgsql_proc = subprocess.Popen(
+            shp2pgsql_cmd, stdout=subprocess.PIPE)
+        psql_proc = subprocess.run(
+            psql_cmd, stdin=shp2pgsql_proc.stdout, check=True)
+
+        # Ensure the pipeline is closed properly
+        shp2pgsql_proc.stdout.close()
+        psql_proc.check_returncode()
         return True
     except TypeError as e:
         print("Pass in the location of the file as a string, not anything else....")
@@ -4574,23 +4610,14 @@ class Application(tornado.web.Application):
             ("/server/deleteCost", deleteCost),
             ("/server/createCostsFromImpact", CreateCostsFromImpactHandler),
 
-
-
             ("/server/createFeaturePreprocessingFileFromImport",
              createFeaturePreprocessingFileFromImport),
-
-
             ("/server/importFeatures", importFeatures),
             ("/server/createFeaturesFromWFS", createFeaturesFromWFS),
-
-
             ("/server/deleteShapefile", deleteShapefile),
-
             ("/server/createPlanningUnitGrid", createPlanningUnitGrid),  # websocket
             ("/server/createMarinePlanningUnitGrid",
              createMarinePlanningUnitGridHandler),  # websocket
-
-
             ("/server/getPlanningUnitGrids", getPlanningUnitGrids),
             ("/server/importPlanningUnitGrid", ImportPlanningUnitGrid),
             ("/server/listProjectsForPlanningGrid", listProjectsForPlanningGrid),
@@ -4598,25 +4625,20 @@ class Application(tornado.web.Application):
             ("/server/updatePUFile", UpdatePUFile),
             ("/server/getPUData", getPUData),
 
-
             ("/server/getServerData", getServerData),
             ("/server/getAtlasLayers", GetAtlasLayersHandler),
             ("/server/getActivities", GetActivitiesHandler),
             ("/server/getAllImpacts", GetAllImpactsHandler),
             ("/server/getCountries", getCountries),
 
-
             ("/server/getAllSpeciesData", getAllSpeciesData),
             ("/server/updateSpecFile", updateSpecFile),
-
 
             ("/server/uploadTilesetToMapBox", uploadTilesetToMapBox),
             ("/server/uploadFileToFolder", uploadFileToFolder),
             ("/server/unzipShapefile", unzipShapefile),
             ("/server/getShapefileFieldnames", getShapefileFieldnames),
 
-
-            # currently not used - bugs in the Marxan output log
             ("/server/getMarxanLog", getMarxanLog),
             ("/server/getResults", getResults),
             ("/server/getSolution", GetSolution),
@@ -4647,10 +4669,7 @@ class Application(tornado.web.Application):
             ("/server/saveRaster", SaveRasterHandler),
             ("/server/getUploadedActivities", GetUploadedActivitiesHandler),
             ("/server/runCumumlativeImpact", CumulativeImpactHandler),
-
-
             ("/server/uploadFile", uploadFile),
-
 
             ("/server/exports/(.*)", StaticFileHandler,
              {"path": project_paths.EXPORT_FOLDER}),

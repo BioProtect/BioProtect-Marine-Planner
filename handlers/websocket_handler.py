@@ -21,6 +21,7 @@ class SocketHandler(WebSocketHandler):
     """
 
     async def initialize(self):
+        super().initialize()
         self.pg = await get_pg
 
     def get_current_user(self):

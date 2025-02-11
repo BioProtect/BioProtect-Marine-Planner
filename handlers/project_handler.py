@@ -17,6 +17,7 @@ from services.file_service import (copy_directory, delete_all_files,
 from services.project_service import clone_a_project, get_project_data, set_folder_paths
 from services.service_error import ServicesError, raise_error
 from services.user_service import get_users
+from services.queries import get_pu_grids_query
 
 
 class ProjectHandler(BaseHandler):
@@ -26,6 +27,7 @@ class ProjectHandler(BaseHandler):
     """
 
     def initialize(self, pg, get_species_data, update_species):
+        super().initialize()
         self.pg = pg
         self.get_species_data = get_species_data
         self.update_species = update_species
@@ -266,14 +268,13 @@ class ProjectHandler(BaseHandler):
 
     # GET /projects?action=get&user=username&project=project_name
     async def get_project(self):
-        project = self.get_argument('project')
-        print('project: ', project)
+        project_id = self.get_argument('projectId')
         print('project: ', project)
 
         if not exists(self.folder_project):
             raise ServicesError(f"The project '{project}' does not exist")
 
-        if not project:
+        if not project_id:
             self.projects = await self.get_projects_for_user(self.get_argument('user'))
             project = self.projects[0]['name']
             self.request.arguments['project'] = [project.encode("utf-8")]
@@ -300,14 +301,13 @@ class ProjectHandler(BaseHandler):
 
         self.get_costs()
 
-        if self.current_user == self.get_argument('user'):
-            self.update_file_parameters(
-                join(self.folder_user, "user.dat"),
-                {'LASTPROJECT': self.get_argument('project')}
-            )
+        self.update_file_parameters(
+            join(self.folder_user, "user.dat"),
+            {'LASTPROJECT': self.get_argument('project')}
+        )
 
         self.send_response({
-            'user': self.get_argument('user'),
+            'user': self.current_user,
             'project': self.projectData['project'],
             'metadata': self.projectData['metadata'],
             'files': self.projectData['files'],
@@ -361,7 +361,7 @@ class ProjectHandler(BaseHandler):
             })
 
         df = pd.DataFrame(projects).set_index("feature_class_name")
-        grids = await get_pu_grids()
+        grids = await self.pg.execute(get_pu_grids_query, return_format="Dict")
         df2 = pd.DataFrame(grids).set_index("feature_class_name")
         df = df.join(df2).replace({pd.NA: None})
 

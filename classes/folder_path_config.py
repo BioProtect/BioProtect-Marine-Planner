@@ -122,7 +122,7 @@ class FolderPathConfig:
         sens_mat['Pressure'] = sens_mat['Pressure'].map(self.replace_chars)
         sens_mat = sens_mat.pivot(
             index="EUNIS_Code", columns="Pressure", values="Sensitivity")
-        sens_mat = sens_mat.applymap(self.sensitivity_text_to_int)
+        sens_mat = sens_mat.map(self.sensitivity_text_to_int)
         return sens_mat
 
     def setup_sensitivity_matrix(self, maresa_file, jncc_file, data_path):

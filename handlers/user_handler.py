@@ -24,6 +24,7 @@ class UserHandler(BaseHandler):
     """
 
     def initialize(self, pg):
+        super().initialize()
         self.pg = pg
 
     def validate_args(self, arguments, required_arguments):
@@ -57,8 +58,6 @@ class UserHandler(BaseHandler):
                 await self.get_user()
             elif action == 'list':
                 await self.get_users()
-            elif action == 'validate':
-                await self.validate_user()
             elif action == 'logout':
                 await self.logout_user()
             elif action == 'delete':
@@ -141,25 +140,6 @@ class UserHandler(BaseHandler):
             self.set_status(500)
             self.write({"message": "Error creating user", "error": str(e)})
 
-    async def validate_user(self):
-        self.validate_args(self.request.arguments, ["user", "password"])
-
-        self.get_user_data(self, True)
-
-        if self.get_argument("password") == self.userData["PASSWORD"]:
-            secure = self.request.protocol == 'https'
-            self.set_secure_cookie("user", self.get_argument(
-                "user"), httponly=True, secure=secure)
-            self.set_secure_cookie(
-                "role", self.userData["ROLE"], httponly=True, secure=secure)
-
-            self.send_response({
-                'validated': True,
-                'info': f"User {self.user} validated"
-            })
-        else:
-            raise ServicesError("Invalid user/password")
-
     async def logout_user(self):
         self.clear_cookie("user")
         self.clear_cookie("role")
@@ -172,7 +152,7 @@ class UserHandler(BaseHandler):
         self.validate_args(self.request.arguments, ["user"])
 
         query = """
-                SELECT id, username, password_hash, role, last_project, show_popup, basemap, use_feature_colours, report_units, refresh_tokens 
+                SELECT id, username, password_hash, role, last_project, show_popup, basemap, use_feature_colours, report_units, refresh_tokens
                 FROM users WHERE username = $1
             """
         userData = await self.pg.execute(query, [self.get_current_user()], return_format="Dict")
@@ -185,31 +165,18 @@ class UserHandler(BaseHandler):
         })
 
     async def get_users(self):
-        user_folders = glob.glob(join(self.proj_paths.USERS_FOLDER, "*/"))
+        """Retrieve a list of users from the database."""
 
-        # Extract usernames from the folder paths
-        users = [basename(normpath(folder)) for folder in user_folders]
-
-        # Remove unwanted special folders
-        excluded_folders = {"input", "output", "MarxanData", "MarxanData_unix"}
-        users = [
-            u for u in users if u not in excluded_folders and not u.startswith("_")]
-
-        users.sort()
-        users_data = []
-
-        for user in users:
-            user_folder = join(self.proj_paths.USERS_FOLDER, user)
-            tmp_obj = SimpleNamespace()
-            tmp_obj.folder_user = user_folder
-            self.get_user_data(tmp_obj)
-            # Add the user's data to the list
-            user_data = tmp_obj.userData.copy()  # pylint:disable=no-member
-            user_data.update({'user': user})
-            users_data.append(user_data)
-
-        self.send_response(
-            {'info': "Users data received", 'users': users_data})
+        query = """
+            SELECT id, username, email, role, date_created
+            FROM users
+            ORDER BY username;
+        """
+        try:
+            users = await self.pg.execute(query, return_format="Dict")
+            return users
+        except Exception as e:
+            self.send_response({"error": f"Failed to fetch users: {str(e)}"})
 
     async def delete_user(self):
         self.validate_args(self.request.arguments, ["user"])
