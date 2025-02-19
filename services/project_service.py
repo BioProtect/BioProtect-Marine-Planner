@@ -2,6 +2,7 @@ import datetime
 import glob
 import shutil
 from os import path, sep, walk
+import json
 
 import pandas as pd
 from classes.folder_path_config import get_folder_path_config
@@ -146,6 +147,12 @@ async def write_csv(obj, file_to_write, df, write_index=False):
                             file_to_write}.dat' has not been set in the input.dat file.")
 
     df.to_csv(path.join(obj.folder_input, file_name), index=write_index)
+
+
+def custom_serializer(obj):
+    if isinstance(obj, datetime):
+        return obj.isoformat()  # Convert datetime to string
+    raise TypeError("Type not serializable")
 
 
 async def get_project_data(pg, obj):

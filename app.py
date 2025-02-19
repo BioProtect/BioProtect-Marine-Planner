@@ -1081,6 +1081,7 @@ class AuthHandler(BaseHandler):
             await pg.execute(update_query, [valid_refresh_tokens, user["id"]])
 
             # Set secure cookie for refresh token
+            self.set_signed_cookie("user", username)
             self.set_cookie("jwt", refresh_token, httponly=True,
                             secure=True, samesite="None")
 
@@ -1094,7 +1095,6 @@ class AuthHandler(BaseHandler):
                 FROM projects WHERE user_id = $1
             """
             project_result = await pg.execute(project_query, [user['id']], return_format="Dict")
-            print('project_result: ', project_result)
 
             # Respond with access token and user data
             self.send_response({

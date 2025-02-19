@@ -3,6 +3,7 @@ import fnmatch
 import glob
 import shutil
 import uuid
+import json
 from os import rename, sep, walk
 from os.path import basename, exists, join, normpath, splitext
 from types import SimpleNamespace
@@ -10,7 +11,8 @@ from types import SimpleNamespace
 import pandas as pd
 from handlers.base_handler import BaseHandler
 from psycopg2 import sql
-from services.file_service import (copy_directory, delete_all_files,
+from services.file_service import (get_key_value, get_keys,
+                                   copy_directory, delete_all_files,
                                    file_data_to_df, get_key_values_from_file,
                                    normalize_dataframe, read_file,
                                    write_to_file)
@@ -39,6 +41,12 @@ class ProjectHandler(BaseHandler):
         if missing:
             raise ServicesError(f"Missing required arguments: {
                                 ', '.join(missing)}")
+
+    @staticmethod
+    def custom_serializer(obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()  # Convert datetime to string
+        raise TypeError("Type not serializable")
 
     async def get_project_by_id(self, project_id):
         """Fetch project details based on project ID."""
@@ -277,60 +285,57 @@ class ProjectHandler(BaseHandler):
 
     # GET /projects?action=get&user=username&project=project_name
     async def get_project(self):
-        project_id = int(self.get_argument('projectId'))
+        project_id = self.get_argument('projectId', None)
+        if self.current_user is None:
+            self.current_user = self.get_current_user()
 
-        if not project_id:
-            """Fetch the first project associated with a user."""
-            query = """
-                SELECT p.*
-                FROM projects p
-                JOIN user_projects up ON p.id = up.project_id
-                WHERE up.user_id = $1
-                ORDER BY p.date_created ASC
-                LIMIT 1;
-            """
-            result = await self.pg.execute(query, [self.current_user], return_format="Dict")
-            project = result[0] if result else None
-        else:
-            project = await self.get_project_by_id(project_id)
+        print("current user is ---- ", self.current_user)
+
+        try:
+            project_id = int(project_id) if project_id else None
+        except ValueError:
+            raise ServicesError("Invalid project ID")
+
+        project = await self.get_project_by_id(project_id) if project_id else await self.get_first_project_by_user()
 
         if project is None:
             raise ServicesError(f"That project does not exist")
 
+        # Define project paths
         self.project = project
-        self.folder_user = join("./users", "cartig")
-        self.project_path = join(
-            "./users", "cartig", project['name']) + sep
+        self.folder_user = join("./users", self.current_user)
+        self.project_path = join(self.folder_user, project['name']) + sep
         self.folder_input = join(self.project_path, "input") + sep
-        print('self.project_path: ', self.project_path)
-        print('self.folder_input: ', self.folder_input)
 
-        await get_project_data(self.pg, self)
+        # 1. Load categorized project data
+        self.projectData = await self.fetch_project_data(self.project_path)
+        print('------------------: ')
+        print('projectData: ', self.projectData)
+
+        # 2. Load species data
         await self.get_species_data(self)
 
+        # 3. Load and normalize planning unit data
         self.speciesPreProcessingData = file_data_to_df(
-            join(self.folder_input, "feature_preprocessing.dat")
-        )
+            join(self.folder_input, "feature_preprocessing.dat"))
 
         df = file_data_to_df(
             join(self.folder_input, self.projectData["files"]["PUNAME"]))
         self.planningUnitsData = normalize_dataframe(df, "status", "id")
 
         protected_areas_df = file_data_to_df(
-            join(self.folder_input, "protected_area_intersections.dat")
-        )
+            join(self.folder_input, "protected_area_intersections.dat"))
         self.protectedAreaIntersectionsData = normalize_dataframe(
-            protected_areas_df, "iucn_cat", "puid"
-        )
+            protected_areas_df, "iucn_cat", "puid")
 
+        # 4. Get project costs
         self.get_costs()
 
-        self.update_file_parameters(
-            join(self.folder_user, "user.dat"),
-            {'LASTPROJECT': self.get_argument('project')}
-        )
+        # 5. Update user data file - shouldnt need to do this - should be updating the db
+        self.update_file_parameters(join(self.folder_user, "user.dat"), {
+                                    'LASTPROJECT': project})
 
-        self.send_response({
+        response = json.dumps({
             'user': self.current_user,
             'project': self.projectData['project'],
             'metadata': self.projectData['metadata'],
@@ -343,6 +348,92 @@ class ProjectHandler(BaseHandler):
             'protected_area_intersections': self.protectedAreaIntersectionsData,
             'costnames': self.costNames
         })
+        self.send_response(response)
+
+    async def get_first_project_by_user(self):
+        """Fetch the first project associated with a user."""
+        query = """
+            SELECT p.*
+            FROM projects p
+            JOIN user_projects up ON p.id = up.project_id
+            WHERE up.user_id = $1
+            ORDER BY p.date_created ASC
+            LIMIT 1;
+        """
+        result = await self.pg.execute(query, [self.current_user], return_format="Dict")
+        project = result[0] if result else None
+
+    async def fetch_project_data(self, project_path):
+        """Fetches categorized project data from input.dat file."""
+        input_file_params = ["PUNAME", "SPECNAME",
+                             "PUVSPRNAME", "BOUNDNAME", "BLOCKDEF"]
+        run_params = ['BLM', 'PROP', 'RANDSEED', 'NUMREPS', 'NUMITNS',
+                      'STARTTEMP', 'NUMTEMP', 'COSTTHRESH', 'THRESHPEN1',
+                      'THRESHPEN2', 'SAVERUN', 'SAVEBEST', 'SAVESUMMARY',
+                      'SAVESCEN', 'SAVETARGMET', 'SAVESUMSOLN', 'SAVEPENALTY',
+                      'SAVELOG', 'RUNMODE', 'MISSLEVEL', 'ITIMPTYPE', 'HEURTYPE',
+                      'CLUMPTYPE', 'VERBOSITY', 'SAVESOLUTIONSMATRIX']
+        metadata_params = ['DESCRIPTION', 'CREATEDATE', 'PLANNING_UNIT_NAME',
+                           'OLDVERSION', 'IUCN_CATEGORY', 'PRIVATE', 'COSTS']
+        renderer_params = ['CLASSIFICATION', 'NUMCLASSES',
+                           'COLORCODE', 'TOPCLASSES', 'OPACITY']
+
+        params_array, files_dict, metadata_dict, renderer_dict = [], {}, {}, {}
+
+        # Load input.dat file
+        input_file_path = join(project_path, "input.dat")
+        file_content = read_file(input_file_path)
+
+        # Process file content
+        keys = get_keys(file_content)
+
+        for key in keys:
+            key_value = get_key_value(file_content, key)
+
+            if key in input_file_params:
+                files_dict[key_value[0]] = key_value[1]
+            elif key in run_params:
+                params_array.append(
+                    {'key': key_value[0], 'value': key_value[1]})
+            elif key in renderer_params:
+                renderer_dict[key_value[0]] = key_value[1]
+            elif key in metadata_params:
+                metadata_dict[key_value[0]] = key_value[1]
+
+                if key == 'PLANNING_UNIT_NAME':
+                    df = await self.pg.execute(
+                        "SELECT * FROM marxan.get_planning_units_metadata($1)",
+                        data=[key_value[1]], return_format="DataFrame")
+
+                    if df.empty:
+                        metadata_dict.update({
+                            'pu_alias': key_value[1],
+                            'pu_description': 'No description',
+                            'pu_domain': 'Unknown domain',
+                            'pu_area': 'Unknown area',
+                            'pu_creation_date': 'Unknown date',
+                            'pu_created_by': 'Unknown',
+                            'pu_country': 'Unknown'
+                        })
+                    else:
+                        row = df.iloc[0]
+                        metadata_dict.update({
+                            'pu_alias': row.get('alias', key_value[1]),
+                            'pu_country': row.get('country', 'Unknown'),
+                            'pu_description': row.get('description', 'No description'),
+                            'pu_domain': row.get('domain', 'Unknown domain'),
+                            'pu_area': row.get('area', 'Unknown area'),
+                            'pu_creation_date': row.get('creation_date', 'Unknown date'),
+                            'pu_created_by': row.get('created_by', 'Unknown')
+                        })
+
+        return {
+            'project': self.project,
+            'metadata': metadata_dict,
+            'files': files_dict,
+            'runParameters': params_array,
+            'renderer': renderer_dict
+        }
 
     async def get_projects(self):
         self.validate_args(self.request.arguments, ['user'])
