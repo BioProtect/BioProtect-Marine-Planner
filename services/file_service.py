@@ -116,7 +116,7 @@ def file_data_to_df(file_name):
     Returns:
         DataFrame: The data from the file.
     """
-    return pd.read_csv(file_name, sep=None, engine='python') if os.path.exists(file_name) else pd.DataFrame()
+    return pd.read_csv(file_name, sep=None, engine='python') if path.exists(file_name) else pd.DataFrame()
 
 
 def get_dict_value(_dict, key):
@@ -679,7 +679,7 @@ def delete_records_in_text_file(filename, id_column_name, ids):
         raise ServicesError(f"The file '{filename}' does not exist.")
 
     # Load existing data from the CSV file
-    df = pd.read_csv(filename, sep=None, engine='python') if os.path.exists(
+    df = pd.read_csv(filename, sep=None, engine='python') if path.exists(
         filename) else pd.DataFrame()
 
     # Remove records with matching IDs

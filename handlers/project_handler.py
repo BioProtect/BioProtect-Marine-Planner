@@ -297,11 +297,13 @@ class ProjectHandler(BaseHandler):
         if project is None:
             raise ServicesError(f"That project does not exist")
 
+        self.project = project
+        self.folder_user = join("./users", "cartig")
         self.project_path = join(
-            "../users", "cartig", project['name']) + sep
-        self.input_folder = join(self.project_path, "input") + sep
+            "./users", "cartig", project['name']) + sep
+        self.folder_input = join(self.project_path, "input") + sep
         print('self.project_path: ', self.project_path)
-        print('self.input_folder: ', self.input_folder)
+        print('self.folder_input: ', self.folder_input)
 
         await get_project_data(self.pg, self)
         await self.get_species_data(self)
