@@ -4082,17 +4082,8 @@ class getUser(MarxanRESTHandler):
             role = self.userData["ROLE"]
             unauthorised = ROLE_UNAUTHORISED_METHODS[role]
             # set the response
-<<<<<<< HEAD
-            self.send_response({
-                'info': "User data received",
-                "userData": self.userData,
-                "unauthorisedMethods": unauthorised,
-                'dismissedNotifications': ids
-            })
-=======
             self.send_response({'info': "User data received", "userData": self.userData,
                                 "unauthorisedMethods": unauthorised, 'dismissedNotifications': ids})
->>>>>>> 18b1667449b3bacf4a0638323c5621c9784009c9
         except MarxanServicesError as e:
             _raiseError(self, e.args[0])
 
