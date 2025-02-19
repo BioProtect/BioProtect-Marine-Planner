@@ -40,6 +40,15 @@ class ProjectHandler(BaseHandler):
             raise ServicesError(f"Missing required arguments: {
                                 ', '.join(missing)}")
 
+    async def get_project_by_id(self, project_id):
+        """Fetch project details based on project ID."""
+        query = """
+            SELECT * FROM projects WHERE id = $1;
+        """
+        result = await self.pg.execute(query, [project_id], return_format="Dict")
+        # ✅ Returns first result or None if not found
+        return result[0] if result else None
+
     def create_project_folder(self, project_name, template_folder):
         project_path = join(self.folder_user, project_name)
 
@@ -56,7 +65,7 @@ class ProjectHandler(BaseHandler):
 
     def update_file_parameters(self, filename, new_params):
         """
-        Updates specific parameters in a file. Parameters matching the keys in `new_params` 
+        Updates specific parameters in a file. Parameters matching the keys in `new_params`
         are updated, while others remain unchanged.
         """
         if not new_params:
@@ -268,18 +277,31 @@ class ProjectHandler(BaseHandler):
 
     # GET /projects?action=get&user=username&project=project_name
     async def get_project(self):
-        project_id = self.get_argument('projectId')
-        print('project: ', project)
-
-        if not exists(self.folder_project):
-            raise ServicesError(f"The project '{project}' does not exist")
+        project_id = int(self.get_argument('projectId'))
 
         if not project_id:
-            self.projects = await self.get_projects_for_user(self.get_argument('user'))
-            project = self.projects[0]['name']
-            self.request.arguments['project'] = [project.encode("utf-8")]
-            set_folder_paths(self, self.request.arguments,
-                             self.proj_paths.USERS_FOLDER)
+            """Fetch the first project associated with a user."""
+            query = """
+                SELECT p.*
+                FROM projects p
+                JOIN user_projects up ON p.id = up.project_id
+                WHERE up.user_id = $1
+                ORDER BY p.date_created ASC
+                LIMIT 1;
+            """
+            result = await self.pg.execute(query, [self.current_user], return_format="Dict")
+            project = result[0] if result else None
+        else:
+            project = await self.get_project_by_id(project_id)
+
+        if project is None:
+            raise ServicesError(f"That project does not exist")
+
+        self.project_path = join(
+            "../users", "cartig", project['name']) + sep
+        self.input_folder = join(self.project_path, "input") + sep
+        print('self.project_path: ', self.project_path)
+        print('self.input_folder: ', self.input_folder)
 
         await get_project_data(self.pg, self)
         await self.get_species_data(self)

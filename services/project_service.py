@@ -159,7 +159,6 @@ async def get_project_data(pg, obj):
     Returns:
         None
     """
-    pg = await get_pg()
 
     input_file_params = ["PUNAME", "SPECNAME",
                          "PUVSPRNAME", "BOUNDNAME", "BLOCKDEF"]
@@ -176,7 +175,8 @@ async def get_project_data(pg, obj):
     renderer_dict = {}
 
     # Load the input.dat file content
-    input_file_path = path.join(obj.folder_project, "input.dat")
+    input_file_path = path.join(obj.project_path, "input.dat")
+    print('input_file_path: ', input_file_path)
     file_content = read_file(input_file_path)
     # Extract keys from the file content
     keys = get_keys(file_content)
