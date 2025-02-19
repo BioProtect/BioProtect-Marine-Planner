@@ -3361,26 +3361,13 @@ class MarxanRESTHandler(tornado.web.RequestHandler):
             _checkCORS(self)
 
 
-<< << << < HEAD
-
-            # check the request is authenticated
-            _authenticate(self)
-
-            # check the users role has access to the requested service
-            _authoriseRole(self, method)
-
-            # check the user has access to the specific resource, i.e. the 'User' role cannot access projects from other users
-            _authoriseUser(self)
-
-== == == =
             # check the request is authenticated
             _authenticate(self)
             # check the users role has access to the requested service
             _authoriseRole(self, method)
             # check the user has access to the specific resource, i.e. the 'User' role cannot access projects from other users
             _authoriseUser(self)
->>>>>> > 18b1667449b3bacf4a0638323c5621c9784009c9
-            # instantiate the response dictionary
+
             self.response = {}
         else:
             if (method != "testTornado"):
