@@ -278,6 +278,10 @@ async def get_species_data(obj):
     Returns:
         None
     """
+
+    def convert_vals(value):
+        return int(value*100)
+
     # Load species data from the SPECNAME file
     specname_path = os.path.join(
         obj.folder_input, obj.projectData["files"]["SPECNAME"])
@@ -292,6 +296,9 @@ async def get_species_data(obj):
 
     # Join PostGIS data with species data
     output_df = output_df.join(feature_data.set_index("unique_id"), how="left")
+    #############################################################
+    # if feature ids dont match with project feature id's everything gets replaced with nan
+    #############################################################
 
     # Rename columns to match client expectations
     output_df.rename(columns={
@@ -300,8 +307,9 @@ async def get_species_data(obj):
     }, inplace=True)
 
     # Convert target values from percentage (e.g., 0.17) to integer (e.g., 17)
-    output_df["target_value"] = (output_df["target_value"] * 100).astype(int)
+    output_df["target_value"] = output_df["target_value"].apply(convert_vals)
 
+    output_df = output_df.replace(np.nan, None)
     # Assign the processed DataFrame to the `speciesData` attribute
     obj.speciesData = output_df
 
