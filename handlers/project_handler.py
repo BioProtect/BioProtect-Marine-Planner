@@ -1,4 +1,4 @@
-import datetime
+from datetime import datetime
 import fnmatch
 import glob
 import shutil
@@ -42,11 +42,11 @@ class ProjectHandler(BaseHandler):
             raise ServicesError(f"Missing required arguments: {
                                 ', '.join(missing)}")
 
-    @staticmethod
-    def custom_serializer(obj):
+    def json_serial(self, obj):
+        """Convert datetime objects to a JSON-serializable format."""
         if isinstance(obj, datetime):
-            return obj.isoformat()  # Convert datetime to string
-        raise TypeError("Type not serializable")
+            return obj.isoformat()
+        raise TypeError(f"Type {type(obj)} not serializable")
 
     async def get_project_by_id(self, project_id):
         """Fetch project details based on project ID."""
@@ -234,7 +234,7 @@ class ProjectHandler(BaseHandler):
             join(self.folder_project, "input.dat"),
             {
                 'DESCRIPTION': description,
-                'CREATEDATE': datetime.datetime.now().strftime("%d/%m/%y %H:%M:%S"),
+                'CREATEDATE': datetime.now().strftime("%d/%m/%y %H:%M:%S"),
                 'PLANNING_UNIT_NAME': planning_grid_name
             }
         )
@@ -335,7 +335,7 @@ class ProjectHandler(BaseHandler):
         self.update_file_parameters(join(self.folder_user, "user.dat"), {
                                     'LASTPROJECT': project})
 
-        response = json.dumps({
+        data = {
             'user': self.current_user,
             'project': self.projectData['project'],
             'metadata': self.projectData['metadata'],
@@ -347,7 +347,8 @@ class ProjectHandler(BaseHandler):
             'planning_units': self.planningUnitsData,
             'protected_area_intersections': self.protectedAreaIntersectionsData,
             'costnames': self.costNames
-        })
+        }
+        response = json.dumps(data, default=self.json_serial)
         self.send_response(response)
 
     async def get_first_project_by_user(self):
@@ -380,25 +381,35 @@ class ProjectHandler(BaseHandler):
 
         params_array, files_dict, metadata_dict, renderer_dict = [], {}, {}, {}
 
+        key_mappings = {
+            **{key: files_dict for key in input_file_params},
+            **{key: params_array for key in run_params},
+            **{key: renderer_dict for key in renderer_params},
+            **{key: metadata_dict for key in metadata_params},
+        }
+
         # Load input.dat file
         input_file_path = join(project_path, "input.dat")
         file_content = read_file(input_file_path)
 
         # Process file content
-        keys = get_keys(file_content)
-
-        for key in keys:
+        for key in get_keys(file_content):
             key_value = get_key_value(file_content, key)
 
-            if key in input_file_params:
-                files_dict[key_value[0]] = key_value[1]
-            elif key in run_params:
-                params_array.append(
-                    {'key': key_value[0], 'value': key_value[1]})
-            elif key in renderer_params:
-                renderer_dict[key_value[0]] = key_value[1]
-            elif key in metadata_params:
-                metadata_dict[key_value[0]] = key_value[1]
+            if key in key_mappings:
+                target_dict = key_mappings[key]
+
+                value = key_value[1]
+
+                # Convert datetime objects to ISO format
+                if isinstance(value, datetime):
+                    value = value.isoformat()
+
+                if target_dict is params_array:
+                    target_dict.append(
+                        {'key': key_value[0], 'value': value})  # List case
+                else:
+                    target_dict[key_value[0]] = value  # Dictionary case
 
                 if key == 'PLANNING_UNIT_NAME':
                     df = await self.pg.execute(
