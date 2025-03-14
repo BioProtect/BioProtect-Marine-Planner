@@ -58,7 +58,7 @@ from services.file_service import (add_parameter_to_file,
                                    delete_zipped_shapefile, get_dict_value,
                                    get_files_in_folder,
                                    get_key_values_from_file,
-                                   get_output_filename, read_file, unzip_file,
+                                   get_output_file, read_file, unzip_file,
                                    unzip_shapefile, update_file_parameters,
                                    write_df_to_file, write_to_file, zip_folder)
 from services.project_service import (get_project_data,
@@ -151,7 +151,7 @@ LOGGING_LEVEL = logging.INFO
 
 # pdoc3 dict to whitelist private members for the documentation
 __pdoc__ = {}
-privateMembers = ['getGeometryType', 'add_parameter_to_file', 'check_zipped_shapefile', 'cleanup', 'clone_project', 'create_user', 'create_zipfile', 'delete_all_files', 'delete_archive_files', '_deleteFeature',  'delete_records_in_text_file', 'del_tileset', 'delete_zipped_shapefile', 'dismiss_notification',  'finish_feature_import', '_getAllProjects', 'get_dict_value', 'get_files_in_folder',   'get_key_value', 'get_keys', 'get_marxan_log', 'get_notifications_data', 'get_output_filename', 'get_project_data', 'get_projects_for_feature', 'get_projects_for_user', 'get_run_logs',
+privateMembers = ['getGeometryType', 'add_parameter_to_file', 'check_zipped_shapefile', 'cleanup', 'clone_project', 'create_user', 'create_zipfile', 'delete_all_files', 'delete_archive_files', '_deleteFeature',  'delete_records_in_text_file', 'del_tileset', 'delete_zipped_shapefile', 'dismiss_notification',  'finish_feature_import', '_getAllProjects', 'get_dict_value', 'get_files_in_folder',   'get_key_value', 'get_keys', 'get_marxan_log', 'get_notifications_data', 'get_output_file', 'get_project_data', 'get_projects_for_feature', 'get_projects_for_user', 'get_run_logs',
                   'get_safe_project_name', 'get_species_data', 'get_unique_feature_name', 'get_user_data', 'get_users', 'get_users_data', 'normalize_dataframe', 'pad_dict', '_preprocessProtectedAreas', 'puid_array_to_df', 'raise_error', 'read_file', '_reprocessProtectedAreas', 'reset_notifications', 'run_command', '_setCORS', 'set_folder_paths', 'set_global_vars', 'unzip_file', 'unzip_shapefile', 'update_dataframe', 'update_file_parameters', 'update_run_log', 'update_species_file', '_uploadTileset', 'upload_tileset_to_mapbox', 'validate_args', 'write_csv', 'write_to_file', 'write_df_to_file', 'zip_folder']
 
 for m in privateMembers:
@@ -284,8 +284,8 @@ async def get_species_data(obj):
 
     # Load species data from the SPECNAME file
     specname_path = os.path.join(
-        obj.folder_input, obj.projectData["files"]["SPECNAME"])
-    df = file_data_to_df(specname_path)
+        obj.input_folder, obj.projectData["files"]["SPECNAME"])
+    df = file_to_df(specname_path)
 
     # Prepare DataFrame with `id` as the index
     output_df = df.set_index("id")
@@ -315,7 +315,7 @@ async def get_species_data(obj):
 
 
 # get the information about which species have already been preprocessed
-def file_data_to_df(file_name):
+def file_to_df(file_name):
     """Reads a file and returns the data as a DataFrame
 
     Args:
@@ -347,7 +347,7 @@ async def process_protected_areas(obj, planning_grid_name=None, folder=None):
         for project_folder in project_folders:
             tmp_obj = ExtendableObject()
             tmp_obj.project = "unimportant"
-            tmp_obj.folder_project = os.path.join(
+            tmp_obj.project_folder = os.path.join(
                 os.path.dirname(project_folder), os.sep)
 
             # Load project metadata
@@ -361,7 +361,7 @@ async def process_protected_areas(obj, planning_grid_name=None, folder=None):
                               'info': f'Preprocessing {planning_grid_name}'})
 
             # Preprocess protected areas
-            await process_protected_areas(obj, planning_grid_name=planning_grid_name, folder=os.path.join(tmp_obj.folder_project, 'input'))
+            await process_protected_areas(obj, planning_grid_name=planning_grid_name, folder=os.path.join(tmp_obj.project_folder, 'input'))
 
         return project_folders
 
@@ -404,7 +404,8 @@ def get_marxan_log(obj):
     """
     Retrieves the Marxan log from the log file after a run and sets it on the provided object.
     """
-    log_file_path = os.path.join(obj.folder_output, "output_log.dat")
+    log_file_path = os.path.join(obj.output_folder, "output_log.dat")
+    print('log_file_path: ', log_file_path)
     obj.marxanLog = read_file(
         log_file_path) if os.path.exists(log_file_path) else ""
 
@@ -432,8 +433,8 @@ async def update_species_file(obj, interest_features, target_values, spf_values,
     if not create:
         # Read existing SPECNAME data
         specname_path = os.path.join(
-            obj.folder_input, obj.projectData["files"]["SPECNAME"])
-        df = file_data_to_df(specname_path)
+            obj.input_folder, obj.projectData["files"]["SPECNAME"])
+        df = file_to_df(specname_path)
 
         # Determine removed IDs
         current_ids = [] if df.empty else df["id"].unique().tolist()
@@ -444,14 +445,14 @@ async def update_species_file(obj, interest_features, target_values, spf_values,
             puvspr_filename = obj.projectData["files"]["PUVSPRNAME"]
 
             # Update PUVSPRNAME file
-            puvspr_path = os.path.join(obj.folder_input, puvspr_filename)
+            puvspr_path = os.path.join(obj.input_folder, puvspr_filename)
             if os.path.exists(puvspr_path):
                 delete_records_in_text_file(
                     puvspr_path, "species", removed_ids)
 
             # Update feature preprocessing file
             preprocessing_path = os.path.join(
-                obj.folder_input, "feature_preprocessing.dat")
+                obj.input_folder, "feature_preprocessing.dat")
             if os.path.exists(preprocessing_path):
                 delete_records_in_text_file(
                     preprocessing_path, "id", removed_ids)
@@ -810,7 +811,7 @@ def get_run_logs():
         pd.DataFrame: The updated DataFrame with run logs.
     """
     # Load the data from the run log file
-    df = file_data_to_df(os.path.join(
+    df = file_to_df(os.path.join(
         project_paths.PROJECT_FOLDER, "runlog.dat"))
     if df.empty:
         return df  # Return immediately if the file is empty or missing
@@ -1022,6 +1023,15 @@ class methodNotFound(BaseHandler):
             raise_error(self, error_message)
 
 
+def set_user_folder_paths(obj, username, project_result):
+    project_name = project_result[0].get("name")
+    print('project_name: ', project_name)
+    set_folder_paths(obj, {
+        "user": [username.encode("utf-8")],
+        "project": [project_name.encode("utf-8")]
+    }, project_paths.USERS_FOLDER)
+
+
 class AuthHandler(BaseHandler):
 
     async def post(self):
@@ -1042,6 +1052,7 @@ class AuthHandler(BaseHandler):
                 FROM users WHERE username = $1
             """
             result = await pg.execute(query, [username], return_format="Dict")
+            print('result: ', result)
             # notifications = get_notifications_data(self)
 
             if not result:
@@ -1103,6 +1114,9 @@ class AuthHandler(BaseHandler):
                 FROM projects WHERE user_id = $1
             """
             project_result = await pg.execute(project_query, [user['id']], return_format="Dict")
+
+            # set folder paths for user when they login
+            set_user_folder_paths(self, username, project_result)
 
             # Respond with access token and user data
             self.send_response({
@@ -1340,11 +1354,9 @@ class getPlanningUnitsCostData(BaseHandler):
             # validate the input arguments
             print("/" * 100)
             validate_args(self.request.arguments, ['user', 'project'])
-            set_folder_paths(self, self.request.arguments,
-                             project_paths.USERS_FOLDER)
             # get the planning units cost information
-            df = file_data_to_df(os.path.join(
-                self.folder_input, self.projectData["files"]["PUNAME"]))
+            df = file_to_df(os.path.join(
+                self.input_folder, self.projectData["files"]["PUNAME"]))
             # normalise the planning unit cost data to make the payload smaller
             data = normalize_dataframe(df, "cost", "id", 9)
 
@@ -1381,12 +1393,12 @@ class updateCosts(BaseHandler):
             # update the costs
             costname = self.get_argument("costname")
             cost_file_path = os.path.join(
-                self.folder_input, f"{costname}.cost")
+                self.input_folder, f"{costname}.cost")
             puname_file_path = os.path.join(
-                self.folder_input, self.projectData["files"]["PUNAME"])
+                self.input_folder, self.projectData["files"]["PUNAME"])
 
             # Load the PUNAME file into a DataFrame
-            puname_df = file_data_to_df(puname_file_path)
+            puname_df = file_to_df(puname_file_path)
 
             if costname == UNIFORM_COST_NAME:
                 # Apply a uniform cost of 1 to all entries
@@ -1402,7 +1414,7 @@ class updateCosts(BaseHandler):
                 puname_df = cost_df.join(puname_df[['status']])
 
             # Update the input.dat file with the selected costname
-            input_dat_path = os.path.join(self.folder_project, "input.dat")
+            input_dat_path = os.path.join(self.project_folder, "input.dat")
             update_file_parameters(input_dat_path, {'COSTS': costname})
 
             # Save the updated PUNAME data
@@ -1437,7 +1449,7 @@ class deleteCost(BaseHandler):
             # delete the cost
             costname = self.get_argument("costname")
             cost_file_path = os.path.join(
-                self.folder_input, f"{costname}.cost")
+                self.input_folder, f"{costname}.cost")
 
             # Check if the cost file exists, and delete it if it does
             if not os.path.exists(cost_file_path):
@@ -1506,8 +1518,8 @@ class GetSolution(BaseHandler):
 
             try:
                 # Retrieve the solution file name
-                file_name = get_output_filename(
-                    os.path.join(self.folder_output, f"{
+                file_name = get_output_file(
+                    os.path.join(self.output_folder, f"{
                                  SOLUTION_FILE_PREFIX}{int(solution_id):05d}")
                 )
             except ServicesError as e:
@@ -1519,17 +1531,17 @@ class GetSolution(BaseHandler):
             else:
                 if os.path.exists(file_name):
                     # Load and normalize solution data
-                    df = file_data_to_df(file_name)
+                    df = file_to_df(file_name)
                     self.solution = normalize_dataframe(
                         df, df.columns[1], df.columns[0])
 
             # Handle missing values file for non-clumping projects
             if user != '_clumping':
-                mv_file_name = get_output_filename(
-                    os.path.join(self.folder_output, f"{
+                mv_file_name = get_output_file(
+                    os.path.join(self.output_folder, f"{
                                  MISSING_VALUES_FILE_PREFIX}{int(solution_id):05d}")
                 )
-                solution_df = file_data_to_df(mv_file_name)
+                solution_df = file_to_df(mv_file_name)
                 self.missingValues = solution_df.to_dict(orient="split")[
                     "data"]
 
@@ -1574,20 +1586,29 @@ class getResults(BaseHandler):
         try:
             # validate the input arguments
             validate_args(self.request.arguments, ['user', 'project'])
+            set_folder_paths(self, self.request.arguments,
+                             project_paths.USERS_FOLDER)
             # get the log
             get_marxan_log(self)
             # get the best solution
-            self.bestSolution = file_data_to_df(
-                get_output_filename(self.folder_output, "output_mvbest"))
+            best_solution_file = os.path.join(
+                self.output_folder, "output_mvbest")
+            self.bestSolution = file_to_df(get_output_file(best_solution_file))
+            print('self.bestSolution: ', self.bestSolution)
+
             # get the output sum
-            self.outputSummary = file_data_to_df(
-                get_output_filename(self.folder_output + "output_sum"))
+            output_sum_file = os.path.join(self.output_folder, "output_sum")
+            self.outputSummary = file_to_df(get_output_file(output_sum_file))
+            print('self.outputSummary: ', self.outputSummary)
+
             # get the summed solution
-            summed_sol_df = file_data_to_df(
-                get_output_filename(self.folder_output, "output_ssoln"))
+            summed_sol_df = file_to_df(get_output_file(
+                os.path.join(self.output_folder, "output_ssoln")))
+
             self.summedSolution = normalize_dataframe(
                 summed_sol_df, "number", "planning_unit")
             # set the response
+
             self.send_response({'info': 'Results loaded', 'log': self.marxanLog,
                                 'mvbest': self.bestSolution.to_dict(orient="split")["data"],
                                 'summary': self.outputSummary.to_dict(orient="split")["data"],
@@ -1751,9 +1772,9 @@ class UpdatePUFile(BaseHandler):
 
             # Read the data from the PUNAME file
             pu_file_path = os.path.join(
-                self.folder_input, self.projectData["files"]["PUNAME"]
+                self.input_folder, self.projectData["files"]["PUNAME"]
             )
-            df = file_data_to_df(pu_file_path)
+            df = file_to_df(pu_file_path)
 
             # Reset the status for all planning units
             df['status'] = 0
@@ -1803,13 +1824,13 @@ class getPUData(BaseHandler):
             validate_args(self.request.arguments, [
                 'user', 'project', 'puid'])
             # get the planning unit data
-            pu_df = file_data_to_df(os.path.join(
-                self.folder_input, self.projectData["files"]["PUNAME"]))
+            pu_df = file_to_df(os.path.join(
+                self.input_folder, self.projectData["files"]["PUNAME"]))
             pu_data = pu_df.loc[pu_df['id'] == int(
                 self.get_argument('puid'))].iloc[0]
             # get a set of feature IDs from the puvspr file
-            df = file_data_to_df(os.path.join(
-                self.folder_input, self.projectData["files"]["PUVSPRNAME"]))
+            df = file_to_df(os.path.join(
+                self.input_folder, self.projectData["files"]["PUVSPRNAME"]))
 
             if not df.empty:
                 features = df.loc[df['pu'] == int(self.get_argument('puid'))]
@@ -1843,8 +1864,8 @@ class createFeaturePreprocessingFileFromImport(BaseHandler):
             validate_args(self.request.arguments, ['user', 'project'])
             # run the internal routine
             puvspr_path = os.path.join(
-                self.folder_input, self.projectData["files"]["PUVSPRNAME"])
-            df = file_data_to_df(puvspr_path)
+                self.input_folder, self.projectData["files"]["PUVSPRNAME"])
+            df = file_to_df(puvspr_path)
 
             if df.empty:
                 raise ServicesError(
@@ -1865,7 +1886,7 @@ class createFeaturePreprocessingFileFromImport(BaseHandler):
 
             # Save the processed data to the feature_preprocessing.dat file
             feature_preprocessing_path = os.path.join(
-                self.folder_input, "feature_preprocessing.dat")
+                self.input_folder, "feature_preprocessing.dat")
             summary.to_csv(feature_preprocessing_path, index=False)
 
             # set the response
@@ -2013,7 +2034,7 @@ class uploadFile(BaseHandler):
             validate_args(self.request.arguments, [
                 'user', 'project', 'filename'])
             # write the file to the server
-            write_to_file(self.folder_project + self.get_argument('filename'),
+            write_to_file(self.project_folder + self.get_argument('filename'),
                           self.request.files['value'][0].body, 'wb')
             # set the response
             self.send_response({'info': "File '" + self.get_argument('filename') +
@@ -2431,7 +2452,7 @@ class runMarxan(WebSocketHandler):
             user = self.get_argument("user")
             project = self.get_argument("project")
             # see if the project is already running - if it is then return an error
-            df = file_data_to_df(
+            df = file_to_df(
                 project_paths.PROJECT_FOLDER + "runlog.dat")
             filtered_df = df.loc[
                 (df['status'] == 'Running') &
@@ -2442,10 +2463,10 @@ class runMarxan(WebSocketHandler):
                 self.close({'error': "The project is already running."})
             else:
                 # set the current folder to the project folder so files can be found in the input.dat file
-                if (os.path.exists(self.folder_project)):
-                    os.chdir(self.folder_project)
+                if (os.path.exists(self.project_folder)):
+                    os.chdir(self.project_folder)
                     # delete all of the current output files
-                    delete_all_files(self.folder_output)
+                    delete_all_files(self.output_folder)
                     # run marxan
                     # the "exec " in front allows you to get the pid of the child process, i.e. marxan, and therefore to be able to kill the process using os.kill(pid, signal.SIGTERM) instead of the tornado process - see here: https://stackoverflow.com/questions/4789837/how-to-terminate-a-python-subprocess-launched-with-shell-true/4791612#4791612
                     try:
@@ -2564,7 +2585,7 @@ class runMarxan(WebSocketHandler):
             if (self.user != '_clumping'):  # dont log clumping runs
                 # get the number of runs completed
                 numRunsCompleted = len(
-                    glob.glob(self.folder_output + "output_r*"))
+                    glob.glob(self.output_folder + "output_r*"))
                 # write the response depending on if the run completed or not
                 if (numRunsCompleted == self.numRunsRequired):
                     update_run_log(self.marxanProcess.pid, self.startTime,
@@ -3019,7 +3040,7 @@ class exportProject(WebSocketHandler):
                 project_paths.EXPORT_FOLDER, f"{user}_{project}")
 
             # ✅ Step 1: Prepare export folder
-            await prepare_export_folder(export_folder, self.folder_project)
+            await prepare_export_folder(export_folder, self.project_folder)
 
             # ✅ Step 2: Export Features
             await export_features(self, export_folder)
@@ -3034,12 +3055,12 @@ class exportProject(WebSocketHandler):
             self.close({'info': "Export project complete",
                        'filename': f"{user}_{project}.mxw"})
 
-            async def prepare_export_folder(export_folder, folder_project):
+            async def prepare_export_folder(export_folder, project_folder):
                 # remote the folder if it already exists
                 if os.path.exists(export_folder):
                     shutil.rmtree(export_folder)
                 # copy the project folder
-                shutil.copytree(folder_project, export_folder)
+                shutil.copytree(project_folder, export_folder)
 
             async def export_features(self, export_folder):
                 self.send_response(
@@ -3258,30 +3279,30 @@ class ImportProject(WebSocketHandler):
             mapping = feature_metadata.join(updated_features)
 
             # Update feature_preprocessing.dat
-            feature_preprocessing = file_data_to_df(os.path.join(
-                self.folder_input, "feature_preprocessing.dat"))
+            feature_preprocessing = file_to_df(os.path.join(
+                self.input_folder, "feature_preprocessing.dat"))
             feature_preprocessing = self.update_dataframe(
                 feature_preprocessing,  mapping, 'id', 'id', 'new_id')
             feature_preprocessing.to_csv(os.path.join(
-                self.folder_input, "feature_preprocessing.dat"), index=False)
+                self.input_folder, "feature_preprocessing.dat"), index=False)
 
             # Update spec.dat
-            spec_dat = file_data_to_df(os.path.join(
-                self.folder_input, self.projectData["files"]["SPECNAME"]))
+            spec_dat = file_to_df(os.path.join(
+                self.input_folder, self.projectData["files"]["SPECNAME"]))
             spec_dat = self.update_dataframe(
                 spec_dat,  mapping, 'id', 'id', 'new_id')
             await write_csv(self, "SPECNAME", spec_dat)
 
             # Update puvspr.dat
-            puvspr_dat = file_data_to_df(os.path.join(
-                self.folder_input, self.projectData["files"]["PUVSPRNAME"]))
+            puvspr_dat = file_to_df(os.path.join(
+                self.input_folder, self.projectData["files"]["PUVSPRNAME"]))
             puvspr_dat = self.update_dataframe(
                 puvspr_dat, mapping, 'species', 'id', 'new_id')
             puvspr_dat = puvspr_dat.sort_values(by=['pu', 'species'])
             await write_csv(self, "PUVSPRNAME", puvspr_dat)
 
             # Clear output folder
-            delete_all_files(self.folder_output)
+            delete_all_files(self.output_folder)
 
             # Import planning grid metadata
             self.send_response(
@@ -3452,9 +3473,9 @@ class PreprocessFeature(QueryWebSocketHandler):
             try:
                 # Load existing PUVSPR data
                 puvspr_path = os.path.join(
-                    self.folder_input, self.projectData["files"]["PUVSPRNAME"])
+                    self.input_folder, self.projectData["files"]["PUVSPRNAME"])
                 try:
-                    existing_data = file_data_to_df(puvspr_path)
+                    existing_data = file_to_df(puvspr_path)
                 except FileNotFoundError:
                     # Initialize empty DataFrame if no existing data
                     existing_data = pd.DataFrame(
@@ -3486,7 +3507,7 @@ class PreprocessFeature(QueryWebSocketHandler):
                 }).astype({'id': 'int', 'pu_area': 'float', 'pu_count': 'int'})
 
                 feature_preprocessing_path = os.path.join(
-                    self.folder_input, "feature_preprocessing.dat")
+                    self.input_folder, "feature_preprocessing.dat")
                 write_df_to_file(feature_preprocessing_path, summary_record)
 
             except ServicesError as e:
@@ -3495,7 +3516,7 @@ class PreprocessFeature(QueryWebSocketHandler):
 
             # Update input.dat and finalize response
             update_file_parameters(
-                os.path.join(self.folder_project, "input.dat"),
+                os.path.join(self.project_folder, "input.dat"),
                 {'PUVSPRNAME': "puvspr.dat"}
             )
 
@@ -3547,11 +3568,11 @@ class ProcessProtectedAreas(QueryWebSocketHandler):
             'user', 'project', 'planning_grid_name'])
 
         planning_grid_name = self.get_argument('planning_grid_name')
-        await process_protected_areas(self, planning_grid_name=planning_grid_name, folder=self.folder_input)
+        await process_protected_areas(self, planning_grid_name=planning_grid_name, folder=self.input_folder)
 
         # Load intersection data
-        protected_areas_df = file_data_to_df(
-            os.path.join(self.folder_input, "protected_area_intersections.dat")
+        protected_areas_df = file_to_df(
+            os.path.join(self.input_folder, "protected_area_intersections.dat")
         )
         self.protectedAreaIntersectionsData = normalize_dataframe(
             protected_areas_df, "iucn_cat", "puid"
@@ -3618,15 +3639,15 @@ class preprocessPlanningUnits(QueryWebSocketHandler):
                 # do the intersection
                 results = await self.executeQuery(sql.SQL("CREATE TABLE marxan.{feature_class_name} AS SELECT DISTINCT a.puid id1, b.puid id2, ST_Length(ST_CollectionExtract(ST_Intersection(ST_Transform(a.geometry, 3410), ST_Transform(b.geometry, 3410)), 2))/1000 boundary  FROM marxan.{planning_unit_name} a, marxan.{planning_unit_name} b  WHERE a.puid < b.puid AND ST_Touches(a.geometry, b.geometry);").format(feature_class_name=sql.Identifier(feature_class_name), planning_unit_name=sql.Identifier(self.projectData["metadata"]["PLANNING_UNIT_NAME"])))
                 # delete the file if it already exists
-                if (os.path.exists(self.folder_input + "bounds.dat")):
-                    os.remove(self.folder_input + "bounds.dat")
+                if (os.path.exists(self.input_folder + "bounds.dat")):
+                    os.remove(self.input_folder + "bounds.dat")
                 # write the boundary lengths to file
-                await pg.execute(sql.SQL("SELECT * FROM marxan.{};").format(sql.Identifier(feature_class_name)), return_format="File", filename=self.folder_input + "bounds.dat")
+                await pg.execute(sql.SQL("SELECT * FROM marxan.{};").format(sql.Identifier(feature_class_name)), return_format="File", filename=self.input_folder + "bounds.dat")
                 # delete the tmp table
                 await pg.execute(sql.SQL("DROP TABLE IF EXISTS marxan.{};").format(sql.Identifier(feature_class_name)))
                 # update the input.dat file
                 update_file_parameters(
-                    self.folder_project + "input.dat", {'BOUNDNAME': 'bounds.dat'})
+                    self.project_folder + "input.dat", {'BOUNDNAME': 'bounds.dat'})
             # set the response
             self.close({'info': 'Boundary lengths calculated'})
 
@@ -3739,8 +3760,8 @@ class runGapAnalysis(QueryWebSocketHandler):
         else:
             validate_args(self.request.arguments, ['user', 'project'])
             # get the identifiers of the features for the project
-            df = file_data_to_df(os.path.join(
-                self.folder_input, self.projectData["files"]["SPECNAME"]))
+            df = file_to_df(os.path.join(
+                self.input_folder, self.projectData["files"]["SPECNAME"]))
 
             featureIds = df['id'].to_numpy().tolist()
             # get the planning grid name
@@ -3797,7 +3818,7 @@ class resetDatabase(QueryWebSocketHandler):
                 featureIdsToKeep = []
                 for file in specDatFiles:
                     # load the spec.dat file
-                    df = file_data_to_df(file)
+                    df = file_to_df(file)
                     # get the unique feature ids
                     ids = df.id.unique().tolist()
                     # merge these ids into the featureIds array
@@ -3815,7 +3836,7 @@ class resetDatabase(QueryWebSocketHandler):
                     # get the input.dat file data
                     tmpObj = ExtendableObject()
                     tmpObj.project = "unimportant"
-                    tmpObj.folder_project = os.path.dirname(file) + os.sep
+                    tmpObj.project_folder = os.path.dirname(file) + os.sep
                     await get_project_data(pg, tmpObj)
                     # get the planning grid
                     planningGridsToKeep.append(
@@ -4607,7 +4628,7 @@ class Application(tornado.web.Application):
                                                       update_species=update_species_file)),
             ("/server/exportProject", exportProject),
             ("/server/importProject", ImportProject),
-            ("/server/users", UserHandler, dict(pg=pg)),
+            ("/server/users", UserHandler, dict(pg=pg, project_paths=project_paths)),
             ("/server/features", FeatureHandler, dict(pg=pg,
                                                       finish_feature_import=finish_feature_import,
                                                       upload_tileset_to_mapbox=upload_tileset_to_mapbox)),

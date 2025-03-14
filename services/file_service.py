@@ -108,7 +108,7 @@ def normalize_dataframe(df, column_to_normalize_by, puid_column_name, classes=No
     ]
 
 
-def file_data_to_df(file_name):
+def file_to_df(file_name):
     """Reads a file and returns the data as a DataFrame
 
     Args:
@@ -400,8 +400,9 @@ def delete_all_files(folder):
                 print(f"Error deleting file '{f}': {e}")
 
 
-def get_output_filename(filename):  # sourcery skip: use-named-expression
-    """Gets the correct filename+extension (normally either csv or txt) of a Marxan file. The extension of the Marxan output files depends on the settings SAVE* in the input.dat file and on the version of marxan.
+def get_output_file(filename):  # sourcery skip: use-named-expression
+    """
+    Gets the correct filename+extension (normally either csv or txt) of a Marxan file. The extension of the Marxan output files depends on the settings SAVE* in the input.dat file and on the version of marxan.
 
     Args:
         filename (string): The full path to the file to get the correct filename for.
@@ -411,7 +412,6 @@ def get_output_filename(filename):  # sourcery skip: use-named-expression
         ServicesError: If the file does not exist.
     """
     files = glob.glob(filename + ".*")
-
     # If any files exist, return the first found with its extension
     if files:
         return files[0]  # Returns the full path including the extension

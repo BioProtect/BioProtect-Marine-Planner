@@ -50,7 +50,7 @@ class SocketHandler(WebSocketHandler):
             if "user" in self.request.arguments:
                 set_folder_paths(self, self.request.arguments,
                                  project_paths.USERS_FOLDER)
-                if hasattr(self, 'folder_project'):
+                if hasattr(self, 'project_folder'):
                     await get_project_data(self.pg, self)
 
             if project_paths.DISABLE_SECURITY:

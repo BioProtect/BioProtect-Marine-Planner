@@ -13,7 +13,7 @@ from handlers.base_handler import BaseHandler
 from psycopg2 import sql
 from services.file_service import (get_key_value, get_keys,
                                    copy_directory, delete_all_files,
-                                   file_data_to_df, get_key_values_from_file,
+                                   file_to_df, get_key_values_from_file,
                                    normalize_dataframe, read_file,
                                    write_to_file)
 from services.project_service import clone_a_project, get_project_data, set_folder_paths
@@ -118,7 +118,7 @@ class ProjectHandler(BaseHandler):
             if not project_name.startswith("__"):
                 # Set the project attributes on tmp_obj for further use
                 tmp_obj.project = project_name
-                tmp_obj.folder_project = join(
+                tmp_obj.project_folder = join(
                     self.proj_paths.USERS_FOLDER, user, project_name, "")
 
                 # Get the project data
@@ -141,10 +141,10 @@ class ProjectHandler(BaseHandler):
         Sets the custom cost profiles for a project in the costNames attribute of the given object.
 
         Args:
-            obj (BaseHandler): The request handler instance with `folder_input` and `costNames` attributes.
+            obj (BaseHandler): The request handler instance with `input_folder` and `costNames` attributes.
         """
         # Retrieve all cost files in the input folder
-        cost_files = glob.glob(join(self.folder_input, "*.cost"))
+        cost_files = glob.glob(join(self.input_folder, "*.cost"))
 
         # Extract and store the base names of the cost files
         cost_names = [splitext(basename(file))[
@@ -231,7 +231,7 @@ class ProjectHandler(BaseHandler):
             self, project, self.proj_paths.EMPTY_PROJECT_TEMPLATE_FOLDER)
 
         self.update_file_parameters(
-            join(self.folder_project, "input.dat"),
+            join(self.project_folder, "input.dat"),
             {
                 'DESCRIPTION': description,
                 'CREATEDATE': datetime.now().strftime("%d/%m/%y %H:%M:%S"),
@@ -251,11 +251,11 @@ class ProjectHandler(BaseHandler):
         await self.pg.execute(
             query,
             return_format="File",
-            filename=join(self.folder_input, "pu.dat")
+            filename=join(self.input_folder, "pu.dat")
         )
 
         self.update_file_parameters(
-            join(self.folder_project, "input.dat"),
+            join(self.project_folder, "input.dat"),
             {'PUNAME': "pu.dat"}
         )
 
@@ -286,17 +286,13 @@ class ProjectHandler(BaseHandler):
     # GET /projects?action=get&user=username&project=project_name
     async def get_project(self):
         project_id = self.get_argument('projectId', None)
-        if self.current_user is None:
-            self.current_user = self.get_current_user()
-
-        print("current user is ---- ", self.current_user)
 
         try:
             project_id = int(project_id) if project_id else None
         except ValueError:
             raise ServicesError("Invalid project ID")
 
-        project = await self.get_project_by_id(project_id) if project_id else await self.get_first_project_by_user()
+        project = await self.get_project_by_id(project_id) if project_id else None
 
         if project is None:
             raise ServicesError(f"That project does not exist")
@@ -305,26 +301,24 @@ class ProjectHandler(BaseHandler):
         self.project = project
         self.folder_user = join("./users", self.current_user)
         self.project_path = join(self.folder_user, project['name']) + sep
-        self.folder_input = join(self.project_path, "input") + sep
+        self.input_folder = join(self.project_path, "input") + sep
 
-        # 1. Load categorized project data
+        # 1. Load project data
         self.projectData = await self.fetch_project_data(self.project_path)
-        print('------------------: ')
-        print('projectData: ', self.projectData)
 
         # 2. Load species data
         await self.get_species_data(self)
 
         # 3. Load and normalize planning unit data
-        self.speciesPreProcessingData = file_data_to_df(
-            join(self.folder_input, "feature_preprocessing.dat"))
+        self.speciesPreProcessingData = file_to_df(
+            join(self.input_folder, "feature_preprocessing.dat"))
 
-        df = file_data_to_df(
-            join(self.folder_input, self.projectData["files"]["PUNAME"]))
+        df = file_to_df(
+            join(self.input_folder, self.projectData["files"]["PUNAME"]))
         self.planningUnitsData = normalize_dataframe(df, "status", "id")
 
-        protected_areas_df = file_data_to_df(
-            join(self.folder_input, "protected_area_intersections.dat"))
+        protected_areas_df = file_to_df(
+            join(self.input_folder, "protected_area_intersections.dat"))
         self.protectedAreaIntersectionsData = normalize_dataframe(
             protected_areas_df, "iucn_cat", "puid")
 
@@ -501,7 +495,7 @@ class ProjectHandler(BaseHandler):
     async def clone_project(self):
         self.validate_args(self.request.arguments, ['user', 'project'])
 
-        cloned_name = clone_a_project(self.folder_project, self.folder_user)
+        cloned_name = clone_a_project(self.project_folder, self.folder_user)
 
         self.send_response({
             'info': f"Project '{cloned_name}' created",
@@ -518,16 +512,16 @@ class ProjectHandler(BaseHandler):
             raise ServicesError("You cannot delete all projects")
 
         # Validate that the project folder exists before attempting to delete it
-        if not exists(self.folder_project):
+        if not exists(self.project_folder):
             raise ServicesError(f"The project folder does not exist.")
 
         try:
-            shutil.rmtree(self.folder_project)
+            shutil.rmtree(self.project_folder)
         except Exception as e:  # Catching all exceptions is a general approach
             raise ServicesError(f"Error deleting project folder: {e}") from e
 
         # Optionally, you could log the deletion
-        print(f"Successfully deleted project folder: {self.folder_project}")
+        print(f"Successfully deleted project folder: {self.project_folder}")
         self.send_response({
             'info': f"Project '{self.get_argument('project')}' deleted",
             'project': self.get_argument('project')
@@ -551,7 +545,7 @@ class ProjectHandler(BaseHandler):
                            'user', 'project', 'newName'])
         new_name = self.get_argument('newName')
 
-        rename(self.folder_project, join(self.folder_user, new_name))
+        rename(self.project_folder, join(self.folder_user, new_name))
 
         self.update_file_parameters(
             join(self.folder_user, "user.dat"),
@@ -573,7 +567,7 @@ class ProjectHandler(BaseHandler):
         for i in range(int(self.get_argument("copies"))):
             project_name = uuid.uuid4().hex
             projects.append({'projectName': project_name, 'clump': i})
-            shutil.copytree(self.folder_project, join(
+            shutil.copytree(self.project_folder, join(
                 self.proj_paths.CLUMP_FOLDER, project_name))
 
             delete_all_files(
@@ -607,7 +601,7 @@ class ProjectHandler(BaseHandler):
         }
 
         self.update_file_parameters(
-            join(self.folder_project, "input.dat"), params)
+            join(self.project_folder, "input.dat"), params)
 
         self.send_response({
             'info': ", ".join(params.keys()) + " parameters updated"

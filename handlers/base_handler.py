@@ -18,9 +18,9 @@ class BaseHandler(RequestHandler):
         user: A string with the name of the user making the request (if the request.arguments contains a user key).
         folder_user: A string with the path to the users folder (if the request.arguments contains a user key).
         project: A string with the name of the project (if the request.arguments contains a project key).
-        folder_project: A string with the path to the project folder (if the request.arguments contains a project key).
-        folder_input: A string with the path to the projects input folder (if the request.arguments contains a project key).
-        folder_output: A string with the path to the projects output folder (if the request.arguments contains a project key).
+        project_folder: A string with the path to the project folder (if the request.arguments contains a project key).
+        input_folder: A string with the path to the projects input folder (if the request.arguments contains a project key).
+        output_folder: A string with the path to the projects output folder (if the request.arguments contains a project key).
     """
 
     def initialize(self):

@@ -5,7 +5,7 @@ import pandas as pd
 import requests
 from handlers.base_handler import BaseHandler
 from psycopg2 import sql
-from services.file_service import (create_zipfile, file_data_to_df,
+from services.file_service import (create_zipfile, file_to_df,
                                    get_key_values_from_file, write_to_file)
 from services.project_service import get_projects_for_feature
 from services.service_error import ServicesError, raise_error
@@ -181,7 +181,7 @@ class FeatureHandler(BaseHandler):
         # unique_ids = self.get_argument("oid")
         ids = self.get_argument("unique_id")
 
-        file_name = os.path.join(self.folder_input,
+        file_name = os.path.join(self.input_folder,
                                  self.projectData["files"]["PUVSPRNAME"])
         df = pd.read_csv(file_name, sep=None, engine='python') if os.path.exists(
             file_name) else pd.DataFrame()

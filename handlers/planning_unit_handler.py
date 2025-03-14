@@ -6,7 +6,7 @@ from os.path import join, relpath
 import pandas as pd
 from psycopg2 import sql
 from services.file_service import (check_zipped_shapefile,
-                                   delete_zipped_shapefile, file_data_to_df,
+                                   delete_zipped_shapefile, file_to_df,
                                    get_files_in_folder,
                                    get_key_values_from_file,
                                    get_shapefile_fieldnames,
@@ -172,8 +172,8 @@ class PlanningUnitHandler(BaseHandler):
         set_folder_paths(self, self.request.arguments,
                          self.proj_paths.USERS_FOLDER)
 
-        df = file_data_to_df(join(
-            self.folder_input, self.projectData["files"]["PUNAME"]))
+        df = file_to_df(join(
+            self.input_folder, self.projectData["files"]["PUNAME"]))
         data = normalize_dataframe(df, "cost", "id", 9)
 
         self.send_response({
@@ -187,10 +187,10 @@ class PlanningUnitHandler(BaseHandler):
         files = self.projectData["files"]
         puid = self.get_argument('puid')
 
-        pu_df = file_data_to_df(join(self.folder_input, files["PUNAME"]))
+        pu_df = file_to_df(join(self.input_folder, files["PUNAME"]))
         pu_data = pu_df.loc[pu_df['id'] == int(puid)].iloc[0]
 
-        df = file_data_to_df(join(self.folder_input, files["PUVSPRNAME"]))
+        df = file_to_df(join(self.input_folder, files["PUVSPRNAME"]))
         features = df.loc[df['pu'] == int(
             puid)] if not df.empty else pd.DataFrame()
 
@@ -215,8 +215,8 @@ class PlanningUnitHandler(BaseHandler):
         status3 = self.create_status_dataframe(status3_ids, 3)
 
         pu_file_path = join(
-            self.folder_input, self.projectData["files"]["PUNAME"])
-        df = file_data_to_df(pu_file_path)
+            self.input_folder, self.projectData["files"]["PUNAME"])
+        df = file_to_df(pu_file_path)
 
         df['status'] = 0
         status_updates = pd.concat([status1, status2, status3])

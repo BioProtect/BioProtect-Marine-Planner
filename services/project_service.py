@@ -51,10 +51,11 @@ def set_folder_paths(obj, arguments, users_folder):
         return
 
     project = decode_argument("project")
-    obj.folder_project = path.join(obj.folder_user, project) + sep
-    obj.folder_input = path.join(obj.folder_project, "input")
-    obj.folder_output = path.join(obj.folder_project, "output") + sep
-    obj.project = obj.get_argument("project")
+    obj.project_folder = path.join(obj.folder_user, project) + sep
+    obj.input_folder = path.join(obj.project_folder, "input")
+    obj.output_folder = path.join(obj.project_folder, "output") + sep
+    if obj.get_argument("project", default=None) is not None:
+        obj.project = obj.get_argument("project")
 
     return obj
 
@@ -108,7 +109,7 @@ def delete_project(obj):
     Returns:
         None
     """
-    project_folder = obj.folder_project
+    project_folder = obj.project_folder
 
     # Validate that the project folder exists before attempting to delete it
     if not path.exists(project_folder):
@@ -146,7 +147,7 @@ async def write_csv(obj, file_to_write, df, write_index=False):
         raise ServicesError(f"The filename for '{
                             file_to_write}.dat' has not been set in the input.dat file.")
 
-    df.to_csv(path.join(obj.folder_input, file_name), index=write_index)
+    df.to_csv(path.join(obj.input_folder, file_name), index=write_index)
 
 
 def custom_serializer(obj):
@@ -183,7 +184,6 @@ async def get_project_data(pg, obj):
 
     # Load the input.dat file content
     input_file_path = path.join(obj.project_path, "input.dat")
-    print('input_file_path: ', input_file_path)
     file_content = read_file(input_file_path)
     # Extract keys from the file content
     keys = get_keys(file_content)
@@ -349,7 +349,7 @@ async def get_projects_for_user(user):
         if not project_name.startswith("__"):
             # Set the project attributes on tmp_obj for further use
             tmp_obj.project = project_name
-            tmp_obj.folder_project = path.join(
+            tmp_obj.project_folder = path.join(
                 fp_config.USERS_FOLDER, user, project_name, "")
 
             # Get the project data

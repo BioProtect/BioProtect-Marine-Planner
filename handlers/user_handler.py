@@ -11,7 +11,7 @@ from psycopg2 import sql
 from services.user_service import get_notifications_data
 from services.file_service import (
     get_key_values_from_file, update_file_parameters)
-from services.project_service import clone_a_project
+from services.project_service import clone_a_project, set_folder_paths
 from services.service_error import ServicesError, raise_error
 
 # JWT utility for generating tokens
@@ -23,9 +23,10 @@ class UserHandler(BaseHandler):
     updating parameters, and retrieving user data.
     """
 
-    def initialize(self, pg):
+    def initialize(self, pg, project_paths):
         super().initialize()
         self.pg = pg
+        self.project_paths = project_paths
 
     def validate_args(self, arguments, required_arguments):
         """
@@ -156,6 +157,7 @@ class UserHandler(BaseHandler):
                 FROM users WHERE username = $1
             """
         userData = await self.pg.execute(query, [self.get_current_user()], return_format="Dict")
+
         notifications = get_notifications_data(self)
         self.send_response({
             'info': "User data received",

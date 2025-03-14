@@ -40,8 +40,6 @@ def validate_arguments(arguments, argumentList):
     """
 
     for argument in argumentList:
-        print('Validating argument: ', argument)
-        print('against list of arguments: ', list(arguments.keys()))
         if argument not in list(arguments.keys()):
             raise raise_error(f"Missing input argument:${argument}")
 
