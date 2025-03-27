@@ -93,48 +93,178 @@ class ProjectHandler(BaseHandler):
         # Write the updated content back to the file
         write_to_file(filename, "\n".join(updated_lines))
 
-    async def get_projects_for_user(self, user):
-        """Gets the projects for the specified user.
+    async def get_projects_for_user(self, user_id):
+        """
+        Gets all projects for a user along with full projectData (metadata, files, run parameters, renderer).
 
         Args:
-            user (str): The name of the user.
+            user_id (int): The ID of the user.
 
         Returns:
-            list[dict]: A list of dictionaries containing each project's data.
+            list[dict]: Each dict contains full project data.
         """
-        # Get a list of project folders in the user's home directory
-        project_folders = glob.glob(
-            join(self.proj_paths.USERS_FOLDER, user, "*/"))
-        project_folders.sort()  # Sort the folders alphabetically
 
-        projects = []
-        tmp_obj = SimpleNamespace()
+        print('user_id: ', user_id)
+        projects = await self.pg.execute("""
+            SELECT p.*, pu.alias AS planning_unit_alias
+            FROM public.projects p
+            LEFT JOIN marxan.metadata_planning_units pu
+                ON p.planning_unit_id = pu.unique_id
+            WHERE p.user_id = $1
+            ORDER BY LOWER(p.name)
+        """, [user_id], return_format="Dict")
 
-        # Iterate through each project folder
-        for project_dir in project_folders:
-            # Extract the project name from the directory path
-            project_name = basename(normpath(project_dir))
-            # Skip system folders (folders beginning with "__")
-            if not project_name.startswith("__"):
-                # Set the project attributes on tmp_obj for further use
-                tmp_obj.project = project_name
-                tmp_obj.project_folder = join(
-                    self.proj_paths.USERS_FOLDER, user, project_name, "")
+        project_data_list = []
 
-                # Get the project data
-                await get_project_data(self.pg, tmp_obj)
+        for project in projects:
+            project_id = project["id"]
 
-                # Append project data to the list
-                projects.append({
-                    'user': user,
-                    'name': project_name,
-                    'description': tmp_obj.projectData["metadata"].get("DESCRIPTION", "No description"),
-                    'createdate': tmp_obj.projectData["metadata"].get("CREATEDATE", "Unknown"),
-                    'oldVersion': tmp_obj.projectData["metadata"].get("OLDVERSION", "Unknown"),
-                    'private': tmp_obj.projectData["metadata"].get("PRIVATE", False)
-                })
+            # Fetch run parameters
+            run_params = await self.pg.execute("""
+                SELECT key, value FROM public.project_run_parameters WHERE project_id = $1
+            """, [project_id], return_format="Dict")
 
-        return projects
+            # Fetch input files
+            files = await self.pg.execute("""
+                SELECT file_type, file_name FROM public.project_files WHERE project_id = $1
+            """, [project_id], return_format="Dict")
+            files_dict = {f["file_type"]: f["file_name"] for f in files}
+
+            # Fetch renderer config
+            renderer = await self.pg.execute("""
+                SELECT key, value FROM public.project_renderer WHERE project_id = $1
+            """, [project_id], return_format="Dict")
+            renderer_dict = {r["key"]: r["value"] for r in renderer}
+
+            # Fetch planning unit metadata (optional)
+            pu_metadata = {}
+            if project.get("planning_unit_id"):
+                df = await self.pg.execute("""
+                    SELECT alias, description, domain, _area AS area, creation_date,
+                        created_by, original_n AS country
+                    FROM marxan.metadata_planning_units
+                    WHERE unique_id = $1
+                """, [project["planning_unit_id"]], return_format="DataFrame")
+
+                if not df.empty:
+                    row = df.iloc[0]
+                    pu_metadata = {
+                        'pu_alias': row.get('alias'),
+                        'pu_description': row.get('description'),
+                        'pu_domain': row.get('domain'),
+                        'pu_area': row.get('area'),
+                        'pu_creation_date': row.get('creation_date'),
+                        'pu_created_by': row.get('created_by'),
+                        'pu_country': row.get('country'),
+                    }
+
+            # Merge into full project data structure
+            project_data_list.append({
+                'id': project_id,
+                'name': project["name"],
+                'user_id': user_id,
+                'description': project.get("description", "No description"),
+                'createdate': project.get("date_created", "Unknown"),
+                'oldVersion': project.get("old_version", False),
+                'private': project.get("is_private", False),
+                'costs': project.get("costs"),
+                'iucn_category': project.get("iucn_category"),
+                'metadata': {
+                    "DESCRIPTION": project.get("description"),
+                    "CREATEDATE": project.get("date_created"),
+                    "OLDVERSION": project.get("old_version"),
+                    "IUCN_CATEGORY": project.get("iucn_category"),
+                    "PRIVATE": project.get("is_private"),
+                    "COSTS": project.get("costs"),
+                    "PLANNING_UNIT_NAME": pu_metadata.get("pu_alias"),
+                    **pu_metadata
+                },
+                'files': files_dict,
+                'runParameters': run_params,
+                'renderer': renderer_dict
+            })
+        print('project_data_list: ', project_data_list)
+        return project_data_list
+
+    # async def get_project_data(pg, project_id, obj):
+    #     """
+    #     Fetches the project data from the database and sets it on the passed object
+    #     in the projectData attribute. This replaces the old input.dat file parsing logic.
+
+    #     Args:
+    #         obj (BaseHandler): The request handler instance.
+    #     Returns:
+    #         None
+    #     """
+
+    #     # 1. Get main project record
+    #     project_row = await pg.execute(
+    #         """SELECT p.* FROM public.projects WHERE id = $1""",
+    #         [project_id],
+    #         return_format="Dict"
+    #     )
+    #     if not project_row:
+    #         raise ServicesError(f"No project data found for project_id {project_id}")
+    #     project_row = project_row[0]
+
+    #     # 2. Get planning unit metadata (if set)
+    #     pu_metadata = {}
+    #     if project_row.get("planning_unit_id"):
+    #         df = await pg.execute("""
+    #             SELECT alias, description, domain, _area AS area, creation_date, created_by, original_n AS country
+    #             FROM marxan.metadata_planning_units
+    #             WHERE unique_id = $1
+    #         """, [project_row["planning_unit_id"]], return_format="DataFrame")
+
+    #         if not df.empty:
+    #             row = df.iloc[0]
+    #             pu_metadata = {
+    #                 'pu_alias': row.get('alias'),
+    #                 'pu_description': row.get('description'),
+    #                 'pu_domain': row.get('domain'),
+    #                 'pu_area': row.get('area'),
+    #                 'pu_creation_date': row.get('creation_date'),
+    #                 'pu_created_by': row.get('created_by'),
+    #                 'pu_country': row.get('country'),
+    #             }
+
+    #     # 3. Get run parameters
+    #     run_params = await pg.execute("""
+    #         SELECT key, value FROM public.project_run_parameters WHERE project_id = $1
+    #     """, [project_id], return_format="Dict")
+
+    #     # 4. Get input files
+    #     files = await pg.execute("""
+    #         SELECT file_type, file_name FROM public.project_files WHERE project_id = $1
+    #     """, [project_id], return_format="Dict")
+    #     files_dict = {row["file_type"]: row["file_name"] for row in files}
+
+    #     # 5. Get renderer settings
+    #     renderer = await pg.execute("""
+    #         SELECT key, value FROM public.project_renderer WHERE project_id = $1
+    #     """, [project_id], return_format="Dict")
+    #     renderer_dict = {r["key"]: r["value"] for r in renderer}
+
+    #     # 6. Compose metadata dictionary
+    #     metadata_dict = {
+    #         "DESCRIPTION": project_row.get("description"),
+    #         "CREATEDATE": project_row.get("created_at"),
+    #         "OLDVERSION": project_row.get("old_version"),
+    #         "IUCN_CATEGORY": project_row.get("iucn_category"),
+    #         "PRIVATE": project_row.get("is_private"),
+    #         "COSTS": project_row.get("costs"),
+    #         "PLANNING_UNIT_NAME": pu_metadata.get("pu_alias"),  # for backward compatibility
+    #         **pu_metadata
+    #     }
+
+    #     # 7. Attach to the object
+    #     obj.projectData = {
+    #         'project': project_row.get("name"),
+    #         'metadata': metadata_dict,
+    #         'files': files_dict,
+    #         'runParameters': run_params,
+    #         'renderer': renderer_dict
+    #     }
 
     def get_costs(self):
         """
@@ -441,20 +571,17 @@ class ProjectHandler(BaseHandler):
         }
 
     async def get_projects(self):
-        self.validate_args(self.request.arguments, ['user'])
-        user_role = self.get_secure_cookie("role").decode("utf-8")
+        # if the user is an admin get all all_projects
+        # if the user isnt an admin get all projects for user
 
-        # If the user is a guest or admin, retrieve all projects
-        if self.user == "guest" or user_role == "Admin":
-            all_projects = []
-            users = get_users()
-            for user in users:
-                user_projects = await self.get_projects_for_user(user)
-                all_projects.extend(user_projects)
-            self.projects = all_projects
-        else:
-            # Otherwise, retrieve only the projects for the logged-in user
-            self.projects = await self.get_projects_for_user(self.user)
+        self.validate_args(self.request.arguments, ['user'])
+        try:
+            user_id = int(self.get_secure_cookie("user_id"))
+            self.projects = await self.get_projects_for_user(user_id)
+
+        except AttributeError:
+            print("AttributeError - user_id error")
+            raise ServicesError(f"The user does not exist.")
 
         self.send_response({"projects": self.projects})
 

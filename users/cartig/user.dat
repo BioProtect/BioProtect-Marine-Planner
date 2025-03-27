@@ -1,5 +1,5 @@
   
-LASTPROJECT {'id': 1, 'user_id': 2, 'name': 'Atlas case study example', 'description': None, 'date_created': datetime.datetime(2025, 1, 9, 16, 48, 32, 819788)}
+LASTPROJECT {'id': 1, 'user_id': 2, 'name': 'Atlas case study example', 'description': 'Example project using atlas case study area test', 'date_created': datetime.datetime(2025, 1, 9, 16, 48, 32, 819788), 'planning_unit_id': None, 'old_version': False, 'iucn_category': 'undefined', 'is_private': False, 'costs': 'Equal area'}
 SHOWPOPUP false
 NAME carlos tighe
 EMAIL carlos.tighe@insight-centre.org

@@ -1061,6 +1061,7 @@ class AuthHandler(BaseHandler):
                 return
 
             user = result[0]
+            print('user: ', user)
 
             # Verify password
             if not bcrypt.verify(pwd, user["password_hash"]):
@@ -1101,6 +1102,9 @@ class AuthHandler(BaseHandler):
 
             # Set secure cookie for refresh token
             self.set_signed_cookie("user", username)
+            self.set_signed_cookie("user_id", str(user['id']))
+            self.set_signed_cookie("role", user['role'])
+
             self.set_cookie("jwt", refresh_token, httponly=True,
                             secure=True, samesite="None")
 

@@ -227,12 +227,12 @@ async def get_project_data(pg, obj):
                     row = df.iloc[0]
                     metadata_dict.update({
                         'pu_alias': row.get('alias', key_value[1]),
-                        'pu_country': row.get('country', 'Unknown'),
                         'pu_description': row.get('description', 'No description'),
                         'pu_domain': row.get('domain', 'Unknown domain'),
                         'pu_area': row.get('area', 'Unknown area'),
                         'pu_creation_date': row.get('creation_date', 'Unknown date'),
-                        'pu_created_by': row.get('created_by', 'Unknown')
+                        'pu_created_by': row.get('created_by', 'Unknown'),
+                        'pu_country': row.get('country', 'Unknown'),
                     })
                 else:
                     metadata_dict.update(default_metadata)
