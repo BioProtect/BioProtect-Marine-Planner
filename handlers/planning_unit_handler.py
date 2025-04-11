@@ -152,7 +152,9 @@ class PlanningUnitHandler(BaseHandler):
         })
 
     async def get_planning_unit_grids(self):
+        print("Retrieving planning unit grids....................")
         planning_unit_grids = await self.pg.execute(get_pu_grids_query, return_format="Dict")
+        print('planning_unit_grids: ', planning_unit_grids)
         self.send_response({
             'info': 'Planning unit grids retrieved',
             'planning_unit_grids': planning_unit_grids

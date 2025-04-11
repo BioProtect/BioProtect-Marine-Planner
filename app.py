@@ -1356,7 +1356,6 @@ class getPlanningUnitsCostData(BaseHandler):
     async def get(self):
         try:
             # validate the input arguments
-            print("/" * 100)
             validate_args(self.request.arguments, ['user', 'project'])
             # get the planning units cost information
             df = file_to_df(os.path.join(
@@ -1598,12 +1597,10 @@ class getResults(BaseHandler):
             best_solution_file = os.path.join(
                 self.output_folder, "output_mvbest")
             self.bestSolution = file_to_df(get_output_file(best_solution_file))
-            print('self.bestSolution: ', self.bestSolution)
 
             # get the output sum
             output_sum_file = os.path.join(self.output_folder, "output_sum")
             self.outputSummary = file_to_df(get_output_file(output_sum_file))
-            print('self.outputSummary: ', self.outputSummary)
 
             # get the summed solution
             summed_sol_df = file_to_df(get_output_file(
@@ -3384,11 +3381,8 @@ class QueryWebSocketHandler(WebSocketHandler):
     # runs a PostGIS query asynchronously and writes the pid to the client so the query can be stopped
 
     async def executeQuery(self, sql, data=None, return_format=None):
-        print('data: ', data)
-        print('sql: ', sql)
-        print('self: ', self)
         try:
-            print('return await pg.execute')
+            print('return await pg.execute..... line 3385')
             return await pg.execute(sql, data=data, return_format=return_format, socketHandler=self)
         except psycopg2.OperationalError as e:
             self.close({'error': "Preprocessing stopped by operating system"})
@@ -4110,13 +4104,10 @@ class GetAtlasLayersHandler(BaseHandler):
             except ET.ParseError:
                 with open('./data/layers.json') as json_file:
                     layers = json.load(json_file)
-                    print('layers: ', layers)
         except ConnectionError as error:
             with open('./data/layers.json') as json_file:
                 layers = json.load(json_file)
-                print('layers: ', layers)
 
-        print('json.dumps(layers): ', json.dumps(layers))
         self.finish(json.dumps(layers))
 
 
@@ -4469,11 +4460,6 @@ class CreateCostsFromImpactHandler(WebSocketHandler):
             print('ServicesError as e: ', e)
             pass
         else:
-            # validate the input arguments
-
-            print('self.get_argument(user): ', self.get_argument('user'))
-            print('self.get_argument(project): ', self.get_argument('project'))
-
             id = None
             nodata_val = 0
             validate_args(self.request.arguments,
