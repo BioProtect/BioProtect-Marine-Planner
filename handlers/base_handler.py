@@ -30,7 +30,7 @@ class BaseHandler(RequestHandler):
         """Writes CORS headers in the response to prevent CORS errors in the client"""
         if proj_paths.DISABLE_SECURITY:
             self.set_header("Access-Control-Allow-Origin",
-                            "http://localhost:3000")
+                            "http://localhost:4500")
             self.set_header("Access-Control-Allow-Methods",
                             "GET, POST, OPTIONS")
             self.set_header("Access-Control-Allow-Headers",

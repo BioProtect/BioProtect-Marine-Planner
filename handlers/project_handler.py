@@ -136,6 +136,26 @@ class ProjectHandler(BaseHandler):
             """, [project_id], return_format="Dict")
             renderer_dict = {r["key"]: r["value"] for r in renderer}
 
+            # Fetch project features.
+            features = await self.pg.execute("""
+                SELECT
+                  f.unique_id,
+                  f.feature_class_name,
+                  f.alias,
+                  f.description,
+                  f.creation_date,
+                  f._area,
+                  f.tilesetid,
+                  f.extent,
+                  f.source,
+                  f.created_by
+                FROM public.project_feature pf
+                JOIN marxan.metadata_interest_features f
+                  ON f.unique_id = pf.feature_unique_id
+                WHERE pf.project_id = $1
+                ORDER BY f.alias
+            """, [project_id], return_format="Dict")
+
             # Fetch planning unit metadata (optional)
             pu_metadata = {}
             if project.get("planning_unit_id"):
@@ -181,7 +201,8 @@ class ProjectHandler(BaseHandler):
                 },
                 'files': files_dict,
                 'runParameters': run_params,
-                'renderer': renderer_dict
+                'renderer': renderer_dict,
+                "project_features": features,
             })
         print('project_data_list: ', project_data_list)
         return project_data_list
