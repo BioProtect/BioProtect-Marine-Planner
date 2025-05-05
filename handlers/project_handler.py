@@ -117,7 +117,9 @@ class ProjectHandler(BaseHandler):
         project_data_list = []
 
         for project in projects:
+            print('--------------------------------- projects: ', projects)
             project_id = project["id"]
+            print('--------------------------------- project_id: ', project_id)
 
             # Fetch run parameters
             run_params = await self.pg.execute("""
@@ -160,14 +162,22 @@ class ProjectHandler(BaseHandler):
             pu_metadata = {}
             if project.get("planning_unit_id"):
                 df = await self.pg.execute("""
-                    SELECT alias, description, domain, _area AS area, creation_date,
-                        created_by, original_n AS country
-                    FROM marxan.metadata_planning_units
-                    WHERE unique_id = $1
+                    SELECT mp.alias, mp.description, mp.domain, mp._area AS area, mp.creation_date, mp.created_by, g.original_n AS country
+                    FROM marxan.metadata_planning_units mp
+                    LEFT OUTER JOIN marxan.gaul_2015_simplified_1km g ON g.id_country = mp.country_id
+                    WHERE mp.unique_id = $1
                 """, [project["planning_unit_id"]], return_format="DataFrame")
+
+                # df = await self.pg.execute("""
+                #     SELECT alias, description, domain, _area AS area, creation_date,
+                #         created_by, original_n AS country
+                #     FROM marxan.metadata_planning_units
+                #     WHERE unique_id = $1
+                # """, [project["planning_unit_id"]], return_format="DataFrame")
 
                 if not df.empty:
                     row = df.iloc[0]
+                    print('============================= row: ', row)
                     pu_metadata = {
                         'pu_alias': row.get('alias'),
                         'pu_description': row.get('description'),
