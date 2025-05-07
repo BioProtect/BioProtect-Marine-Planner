@@ -9,6 +9,8 @@ class DBConfig:
     def __init__(self):
         # Load environment and server configuration
         self.db_config = dotenv_values('.env.local')
+        print("Loaded .env.local →", repr(self.db_config))
+
         self.set_executables()
         self.load_server_config()
         self.engine = self.create_db_engine()

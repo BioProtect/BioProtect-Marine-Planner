@@ -27,6 +27,7 @@ from threading import Thread
 from urllib import request
 from urllib.parse import urlparse
 import shlex
+import inspect
 
 import aiopg
 import colorama
@@ -2001,14 +2002,17 @@ class uploadFileToFolder(BaseHandler):
     def post(self):
         try:
             # validate the input arguments
-            validate_args(self.request.arguments, [
-                'filename', 'destFolder'])
+            validate_args(self.request.arguments, ['filename', 'destFolder'])
+            filename = self.get_argument('filename')
+            print('filename----------------------------------------: ', filename)
+            dest_folder = self.get_argument('destFolder')
+            print('dest_folder-------------------------------------: ', dest_folder)
             # write the file to the server
-            write_to_file(project_paths.PROJECT_FOLDER + self.get_argument('destFolder') + os.sep +
-                          self.get_argument('filename'), self.request.files['value'][0].body, 'wb')
+            write_to_file(project_paths.PROJECT_FOLDER + dest_folder + os.sep + filename,
+                          self.request.files['value'][0].body, 'wb')
             # set the response
-            self.send_response({'info': "File '" + self.get_argument('filename') +
-                                "' uploaded", 'file': self.get_argument('filename')})
+            self.send_response({'info': "File '" + filename +
+                                "' uploaded", 'file': filename})
         except ServicesError as e:
             raise_error(self, e.args[0])
 
@@ -3083,8 +3087,8 @@ class exportProject(WebSocketHandler):
                     {'status': 'Preprocessing', 'info': "Exporting feature metadata..."})
                 escaped_names = "', '".join(feature_classnames)
                 sql_query = f"""
-                    SELECT unique_id, feature_class_name, alias, description 
-                    FROM metadata_interest_features 
+                    SELECT unique_id, feature_class_name, alias, description
+                    FROM metadata_interest_features
                     WHERE feature_class_name = ANY (ARRAY['{escaped_names}']);
                 """
                 csv_output_path = os.path.join(
@@ -3107,10 +3111,10 @@ class exportProject(WebSocketHandler):
                 self.send_response(
                     {'status': 'Preprocessing', 'info': "Exporting planning grid metadata..."})
                 sql_query = f"""
-                    SELECT feature_class_name, alias, description, country_id, aoi_id, domain, _area, 
-                        ST_AsText(envelope) AS envelope, creation_date, source, created_by, 
-                        tilesetid, planning_unit_count 
-                    FROM marxan.metadata_planning_units 
+                    SELECT feature_class_name, alias, description, country_id, aoi_id, domain, _area,
+                        ST_AsText(envelope) AS envelope, creation_date, source, created_by,
+                        tilesetid, planning_unit_count
+                    FROM marxan.metadata_planning_units
                     WHERE feature_class_name = '{pu_name}';
                 """
 
@@ -4055,6 +4059,16 @@ class updateWDPA(QueryWebSocketHandler):
 
 
 def getPressuresActivitiesDatabase(padfile_path):
+    db_url = (
+        f"postgresql://{db_config.DATABASE_USER}:"
+        f"{db_config.DATABASE_PASSWORD}@"
+        f"{db_config.DATABASE_HOST}/"
+        f"{db_config.DATABASE_NAME}"
+    )
+    print('db_url: ', db_url)
+
+    engine = create_engine(db_url)
+    print('engine: ', engine)
     try:
         pad = pd.read_sql('select * from marxan.pad', con=engine)
     except exc.ProgrammingError as err:
@@ -4113,7 +4127,8 @@ class GetAtlasLayersHandler(BaseHandler):
 
 class GetActivitiesHandler(BaseHandler):
     async def get(self):
-        pad = getPressuresActivitiesDatabase(config['pad'])
+
+        pad = getPressuresActivitiesDatabase(db_config.db_config.get('pad'))
         try:
             activities = []
             activitytitles = pad.activitytitle.unique()
