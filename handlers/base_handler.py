@@ -67,14 +67,19 @@ class BaseHandler(RequestHandler):
         Returns:
             None
         """
+        print("send_response=======================: ", response)
         # Convert datetime objects to string
+
         def json_serial(obj):
             if isinstance(obj, datetime):
                 return obj.isoformat()  # Convert to string format
             raise TypeError(f"Type {type(obj)} not serializable")
 
+        self.set_header('Content-Type', 'application/json')
+        # make sure content exists no matter what
+        content = ''
+
         try:
-            self.set_header('Content-Type', 'application/json')
             content = json.dumps(response, default=json_serial)
 
         except (UnicodeDecodeError) as e:
@@ -83,10 +88,13 @@ class BaseHandler(RequestHandler):
                     "log": f"Server warning: Unable to encode the Marxan log. <br/>{repr(e)}",
                     "warning": "Unable to encode the Marxan log"
                 })
-                content = json.dumps(response, default=json_serial)
+            content = json.dumps(response, default=json_serial)
+
         finally:
-            if "callback" in self.request.arguments:
-                callback = self.get_argument("callback")
+            callback = self.get_argument("callback", None)
+            if callback:
+                print('callback: ', callback)
+                content = f"{callback}({content})"
                 self.write(f"{callback}({content})")
             else:
                 self.write(content)

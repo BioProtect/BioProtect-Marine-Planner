@@ -1358,11 +1358,18 @@ class getPlanningUnitsCostData(BaseHandler):
         try:
             # validate the input arguments
             validate_args(self.request.arguments, ['user', 'project'])
+            project_id = self.get_argument("project")
             # get the planning units cost information
-            df = file_to_df(os.path.join(
-                self.input_folder, self.projectData["files"]["PUNAME"]))
+            # df = file_to_df(os.path.join(self.input_folder,self.projectData["files"]["PUNAME"]))
+            query = (
+                f"SELECT * FROM public.pu_costs WHERE project_id={project_id};"
+            )
+            df = await pg.execute(query, return_format="DataFrame")
+            print('df: ', df)
+
             # normalise the planning unit cost data to make the payload smaller
             data = normalize_dataframe(df, "cost", "id", 9)
+            print('data: ', data)
 
             # set the response
             self.send_response({
