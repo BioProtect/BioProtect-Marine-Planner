@@ -26,6 +26,9 @@ class BaseHandler(RequestHandler):
     def initialize(self):
         self.proj_paths = proj_paths
 
+    def prepare(self):
+        print(f"Incoming {self.request.method} request to {self.request.uri}")
+
     def set_default_headers(self):
         """Writes CORS headers in the response to prevent CORS errors in the client"""
         if proj_paths.DISABLE_SECURITY:
@@ -67,7 +70,6 @@ class BaseHandler(RequestHandler):
         Returns:
             None
         """
-        print("send_response=======================: ", response)
         # Convert datetime objects to string
 
         def json_serial(obj):

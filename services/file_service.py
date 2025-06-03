@@ -246,9 +246,13 @@ def get_key_values_from_file(filename):
 
 
 def write_to_file(filename, data, mode='w'):
-    encoding = 'utf-8' if 'w' in mode or 'a' in mode else None
-    with open(filename, mode, encoding=encoding) as f:
-        f.write(data)
+    print('Writing to file - filename, mode: ', filename, mode)
+    if 'b' in mode:
+        with open(filename, mode) as f:
+            f.write(data)
+    else:
+        with open(filename, mode, encoding='utf-8') as f:
+            f.write(data)
 
 
 def update_file_parameters(filename, newParams):

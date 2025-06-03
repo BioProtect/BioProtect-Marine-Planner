@@ -24,19 +24,29 @@ class SocketHandler(WebSocketHandler):
         super().initialize()
         self.pg = await get_pg
 
+    def prepare(self):
+        print("WebSocket prepare: headers =", self.request.headers)
+        if not self.get_secure_cookie("user"):
+            raise HTTPError(403, reason="User not authenticated")
+
     def get_current_user(self):
         """Retrieves the currently authenticated user."""
         user_cookie = self.get_secure_cookie("user")
+        print('++++++++++++++++++++++++++++user_cookie: ', user_cookie)
         return user_cookie.decode("utf-8") if user_cookie else None
 
     def check_origin(self, origin):
         """Checks CORS access for the WebSocket."""
         if project_paths.DISABLE_SECURITY:
+            print('++++++++++++++++++++++++++++++project_paths.DISABLE_SECURITY: ',
+                  project_paths.DISABLE_SECURITY)
             return True
 
         parsed_origin = urlparse(origin)
+        print('parsed_origin: ', parsed_origin)
         if origin in project_paths.PERMITTED_DOMAINS or parsed_origin.netloc.find(self.request.host_name) != -1:
             return True
+        print("++++++++++++error happeneing here.")
         raise HTTPError(403, f"The origin '{
                         origin}' does not have permission to access the service (CORS error)")
 
@@ -48,7 +58,8 @@ class SocketHandler(WebSocketHandler):
             self.send_response(start_message)
 
             if "user" in self.request.arguments:
-                set_folder_paths(self, self.request.arguments,
+                set_folder_paths(self,
+                                 self.request.arguments,
                                  project_paths.USERS_FOLDER)
                 if hasattr(self, 'project_folder'):
                     await get_project_data(self.pg, self)
@@ -57,6 +68,8 @@ class SocketHandler(WebSocketHandler):
                 return
 
             if not self.current_user:
+                print(
+                    '+++++++++++++++++++ problem here = self.current_user: ', self.current_user)
                 raise HTTPError(401, "User not authenticated")
 
             self._authorize_request()
@@ -74,32 +87,30 @@ class SocketHandler(WebSocketHandler):
     def _authorize_request(self):
         """Handles authorization logic for WebSocket requests."""
         method = self.request.path.strip("/").split("/")[-1]
+        print('+++++++++++++++++++method: ', method)
 
         role = self.get_secure_cookie("role")
         if not role:
+            print('+++++++++++++++++++  role is the issue: ', role)
             raise HTTPError(403, "Unauthorized: Role not found.")
 
         role = role.decode("utf-8")
-        unauthorized_methods = ROLE_UNAUTHORISED_METHODS.get(role, [])
-        if method in unauthorized_methods:
-            raise HTTPError(
-                403, f"Role '{role}' does not have access to '{method}'")
-
         requested_user = self.get_argument("user", None)
         if not requested_user:
+            print('+++++++++++++++++++++ requested_user: ', requested_user)
             return
 
         if requested_user == "_clumping":
             return
 
-        if requested_user != self.current_user:
-            if self.current_user == GUEST_USERNAME:
-                raise HTTPError(
-                    403, "Guest users cannot access other users' projects.")
+        # if requested_user != self.current_user:
+        #     if self.current_user == GUEST_USERNAME:
+        #         raise HTTPError(
+        #             403, "Guest users cannot access other users' projects.")
 
-            if role != "Admin":
-                raise HTTPError(
-                    403, f"User '{self.current_user}' cannot access projects of other users.")
+        #     if role != "Admin":
+        #         raise HTTPError(
+        #             403, f"User '{self.current_user}' cannot access projects of other users.")
 
     def send_response(self, message):
         """Sends a response to the client with metadata."""

@@ -2011,15 +2011,15 @@ class uploadFileToFolder(BaseHandler):
             # validate the input arguments
             validate_args(self.request.arguments, ['filename', 'destFolder'])
             filename = self.get_argument('filename')
-            print('filename----------------------------------------: ', filename)
             dest_folder = self.get_argument('destFolder')
-            print('dest_folder-------------------------------------: ', dest_folder)
+            print('====================== dest_folder: ', dest_folder)
             # write the file to the server
-            write_to_file(project_paths.PROJECT_FOLDER + dest_folder + os.sep + filename,
-                          self.request.files['value'][0].body, 'wb')
-            # set the response
-            self.send_response({'info': "File '" + filename +
-                                "' uploaded", 'file': filename})
+            file_path = project_paths.PROJECT_FOLDER + dest_folder + os.sep + filename
+            print("==============================Writing file to:", file_path)
+            write_to_file(
+                file_path, self.request.files["value"][0]["body"], 'wb')
+            self.send_response(
+                {'info': f"File '{filename}' uploaded", 'file': filename})
         except ServicesError as e:
             raise_error(self, e.args[0])
 
@@ -2073,11 +2073,17 @@ class unzipShapefile(BaseHandler):
         try:
             # validate the input arguments
             validate_args(self.request.arguments, ['filename'])
+            filename = self.get_argument('filename')
+            filepath = project_paths.IMPORT_FOLDER
+            print('===================== filepath: ', filepath)
             # write the file to the server
-            rootfilename = await IOLoop.current().run_in_executor(None, unzip_shapefile, project_paths.IMPORT_FOLDER, self.get_argument('filename'))
+            rootfilename = await IOLoop.current().run_in_executor(
+                None, unzip_shapefile, filepath, filename)
             # set the response
-            self.send_response({'info': "File '" + self.get_argument(
-                'filename') + "' unzipped", 'rootfilename': rootfilename})
+            self.send_response({
+                'info': f"File '{filename}' unzipped",
+                'rootfilename': rootfilename
+            })
         except ServicesError as e:
             raise_error(self, e.args[0])
 
@@ -2645,15 +2651,17 @@ class importFeatures(WebSocketHandler):
     async def open(self):
         try:
             await super().open({'info': "Importing features.."})
+            print(
+                "////////////////////// importing featires in the importFeatures Websocket Handeler")
         except ServicesError:  # authentication/authorisation error
+            print("///////////////////////////////// services/authentication error.")
             pass
         else:
             # validate the input arguments
             validate_args(self.request.arguments, ['shapefile'])
-            # initiate the mapbox upload ids array
-            uploadIds = []
             # get the name of the shapefile that has already been unzipped on the server
             shapefile = self.get_argument('shapefile')
+            print('///////////////// shapefile: ', shapefile)
             # if a name is passed then this is a single feature class
             if "name" in list(self.request.arguments.keys()):
                 name = self.get_argument('name')
@@ -2662,18 +2670,29 @@ class importFeatures(WebSocketHandler):
             try:
                 # get a scratch name for the import
                 scratch_name = get_unique_feature_name("scratch_")
+                print('/////////// scratch_name: ', scratch_name)
                 # first, import the shapefile into a PostGIS feature class in EPSG:4326
                 await pg.importShapefile(project_paths.IMPORT_FOLDER, shapefile, scratch_name)
                 # check the geometry
-                self.send_response(
-                    {'status': 'Preprocessing', 'info': "Checking the geometry.."})
+                self.send_response({
+                    'status': 'Preprocessing',
+                    'info': "Checking the geometry.."
+                })
+                print("//////// should have imported shapefile")
                 await pg.isValid(scratch_name)
                 # get the feature names
                 if name:  # single feature name
                     feature_names = [name]
                 else:  # get the feature names from a field in the shapefile
                     splitfield = self.get_argument('splitfield')
-                    features = await pg.execute(sql.SQL("SELECT {splitfield} FROM marxan.{scratchTable}").format(splitfield=sql.Identifier(splitfield), scratchTable=sql.Identifier(scratch_name)), return_format="DataFrame")
+                    query = sql.SQL(
+                        "SELECT {splitfield} FROM marxan.{scratchTable}"
+                    ).format(
+                        splitfield=sql.Identifier(splitfield),
+                        scratchTable=sql.Identifier(scratch_name)
+                    )
+                    features = await pg.execute(query, return_format="DataFrame")
+
                     feature_names = list(set(features[splitfield].tolist()))
                     # if they are not unique then return an error
                     # if (len(feature_names) != len(set(feature_names))):
@@ -2681,38 +2700,61 @@ class importFeatures(WebSocketHandler):
                 # split the imported feature class into separate feature classes
                 for feature_name in feature_names:
                     # create the new feature class
-                    if name:  # single feature name
-                        feature_class_name = get_unique_feature_name("f_")
-                        await pg.execute(sql.SQL("CREATE TABLE marxan.{feature_class_name} AS SELECT * FROM marxan.{scratchTable};").format(feature_class_name=sql.Identifier(feature_class_name), scratchTable=sql.Identifier(scratch_name)), [feature_name])
-                        description = self.get_argument('description')
-                    else:  # multiple feature names
-                        feature_class_name = get_unique_feature_name("fs_")
-                        await pg.execute(sql.SQL("CREATE TABLE marxan.{feature_class_name} AS SELECT * FROM marxan.{scratchTable} WHERE {splitField} = %s;").format(feature_class_name=sql.Identifier(feature_class_name), scratchTable=sql.Identifier(scratch_name), splitField=sql.Identifier(splitfield)), [feature_name])
-                        description = "Imported from '" + shapefile + \
-                            "' and split by '" + splitfield + "' field"
+                    is_single = bool(name)
+                    prefix = "f_" if is_single else "fs_"
+                    feature_name = get_unique_feature_name(prefix)
+                    params = [feature_name]
+
+                    # single feature vs shapefile with multiple features
+                    if is_single:
+                        # No WHERE clause for single import
+                        query = sql.SQL("""
+                            CREATE TABLE marxan.{feature_name} AS
+                            SELECT * FROM marxan.{scratch_table};
+                        """).format(
+                            feature_name=sql.Identifier(feature_name),
+                            scratch_table=sql.Identifier(scratch_name)
+                        )
+                        description = self.get_argument("description")
+                    else:
+                        # Filter by field value for multi-import
+                        query = sql.SQL("""
+                            CREATE TABLE marxan.{feature_name} AS
+                            SELECT * FROM marxan.{scratch_table}
+                            WHERE {split_field} = %s;
+                        """).format(
+                            feature_name=sql.Identifier(feature_name),
+                            scratch_table=sql.Identifier(scratch_name),
+                            split_field=sql.Identifier(splitfield)
+                        )
+                        description = f"Imported from '{shapefile}' and split by '{splitfield}' field"
+
+                    await pg.execute(query, params)
+
                     # add an index and a record in the metadata_interest_features table and start the upload to mapbox
-                    geometryType = await pg.getGeometryType(feature_class_name)
+                    geometryType = await pg.getGeometryType(feature_name)
                     source = "Imported shapefile" if (
                         geometryType != 'ST_Point') else "Imported shapefile (points)"
 
-                    id = await finish_feature_import(feature_class_name, feature_name, description, source, self.get_current_user())
-                    # start the upload to mapbox
-                    uploadId = await upload_tileset_to_mapbox(feature_class_name, feature_class_name)
-
-                    # append the uploadId to the uploadIds array
-                    uploadIds.append(uploadId)
-                    self.send_response({'id': id, 'feature_class_name': feature_class_name, 'uploadId': uploadId,
-                                        'info': "Feature '" + feature_name + "' imported", 'status': 'FeatureCreated'})
+                    id = await finish_feature_import(feature_name,
+                                                     feature_name,
+                                                     description,
+                                                     source,
+                                                     self.get_current_user())
+                    self.send_response({
+                        'id': id,
+                        'feature_name': feature_name,
+                        'info': f"Feature '{feature_name}' imported",
+                        'status': 'FeatureCreated'
+                    })
                 # complete
-                self.close({'info': "Features imported",
-                            'uploadIds': uploadIds})
+                self.close({'info': "Features imported"})
+
             except (ServicesError) as e:
-                if "already exists" in e.args[0]:
-                    self.close({'error': "The feature '" + feature_name +
-                                "' already exists", 'info': 'Failed to import features'})
-                else:
-                    self.close(
-                        {'error': e.args[0], 'info': 'Failed to import features'})
+                self.close({
+                    'info': 'Failed to import features',
+                    'error': e.args[0]
+                })
             finally:
                 # delete the scratch feature class
                 await pg.execute(sql.SQL("DROP TABLE IF EXISTS marxan.{}").format(sql.Identifier(scratch_name)))
