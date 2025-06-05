@@ -268,7 +268,7 @@ class PlanningUnitHandler(BaseHandler):
             )
 
             await self.pg.importShapefile(import_folder, f"{root_filename}.shp", feature_class_name)
-            await self.pg.isValid(feature_class_name)
+            await self.pg.is_valid(feature_class_name)
 
             await self.pg.execute(
                 sql.SQL("ALTER TABLE marxan.{} ALTER COLUMN puid TYPE integer;").format(

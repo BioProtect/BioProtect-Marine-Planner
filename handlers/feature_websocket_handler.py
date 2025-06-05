@@ -53,7 +53,7 @@ class FeatureHandler(SocketHandler):
             await self.pg.importShapefile(self.proj_paths.IMPORT_FOLDER, shapefile, scratch_name)
             self.send_response(
                 {'status': 'Preprocessing', 'info': "Checking the geometry.."})
-            await self.pg.isValid(scratch_name)
+            await self.pg.is_valid(scratch_name)
 
             # Handle feature names
             feature_names = [name] if name else await self.get_feature_names_from_shapefile(scratch_name)
@@ -93,7 +93,7 @@ class FeatureHandler(SocketHandler):
             await self.pg.importGml(self.proj_paths.IMPORT_FOLDER, f"{feature_class_name}.gml", feature_class_name, sEpsgCode=self.get_argument('srs'))
             self.send_response(
                 {'status': 'Preprocessing', 'info': "Checking the geometry.."})
-            await self.pg.isValid(feature_class_name)
+            await self.pg.is_valid(feature_class_name)
 
             # Finalize feature import
             feature_id = await self.finalize_feature_import(feature_class_name, self.get_argument('name'))
@@ -141,7 +141,7 @@ class FeatureHandler(SocketHandler):
     async def finalize_feature_import(self, feature_class_name, feature_name):
         description = self.get_argument(
             'description', f"Imported from '{feature_name}'")
-        geometry_type = await self.pg.getGeometryType(feature_class_name)
+        geometry_type = await self.pg.get_geometry_type(feature_class_name)
 
         source = "Imported shapefile (points)" if geometry_type == 'ST_Point' else "Imported shapefile"
 

@@ -515,14 +515,13 @@ def zip_folder(folder, zip_file):
                 zipobj.write(file_path, arcname)
 
 
-def check_zipped_shapefile(shapefile, errors_page):
+def check_zipped_shapefile(shapefile):
     # sourcery skip: use-named-expression
     """
     Validates that all necessary files for the shapefile are present. Raises an exception if any are missing.
 
     Args:
         shapefile (str): The full path to the shapefile (*.shp).
-        errors_page (str): URL to the errors documentation page.
 
     Returns:
         None
@@ -534,19 +533,18 @@ def check_zipped_shapefile(shapefile, errors_page):
     required_extensions = ['shp', 'shx', 'dbf']
     # Get the base name of the shapefile (without extension) and check if any files of that name exist
     base_name = shapefile.rsplit('.', 1)[0]
+
     if not glob.glob(f"{base_name}.*"):
         raise ServicesError(f"The shapefile '{shapefile}' was not found.")
 
     # Check for missing required files
     missing_files = [
-        ext for ext in required_extensions
-        if not any(path.exists(f"{base_name}.{ext.lower()}"))
-    ]
+        ext for ext in required_extensions if not path.exists(f"{base_name}.{ext}")]
 
     if missing_files:
-        missing_files_str = ", ".join(f"*.{ext}" for ext in missing_files)
+        missing_str = ", ".join(f"*.{ext}" for ext in missing_files)
         raise ServicesError(
-            f"The following files are missing: {missing_files_str}."
+            f"The following files are missing: {missing_str}."
         )
 
 

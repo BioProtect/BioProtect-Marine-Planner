@@ -74,7 +74,7 @@ from handlers.base_handler import BaseHandler
 from handlers.user_handler import UserHandler
 from handlers.project_handler import ProjectHandler
 from handlers.feature_handler import FeatureHandler
-from handlers.websocket_handler import WebSocketHandler
+from handlers.websocket_handler import SocketHandler
 from handlers.planning_unit_handler import PlanningUnitHandler
 from sqlalchemy import create_engine, exc
 from tornado import concurrent, gen, httpclient, queues
@@ -152,7 +152,7 @@ LOGGING_LEVEL = logging.INFO
 
 # pdoc3 dict to whitelist private members for the documentation
 __pdoc__ = {}
-privateMembers = ['getGeometryType', 'add_parameter_to_file', 'check_zipped_shapefile', 'cleanup', 'clone_project', 'create_user', 'create_zipfile', 'delete_all_files', 'delete_archive_files', '_deleteFeature',  'delete_records_in_text_file', 'del_tileset', 'delete_zipped_shapefile', 'dismiss_notification',  'finish_feature_import', '_getAllProjects', 'get_dict_value', 'get_files_in_folder',   'get_key_value', 'get_keys', 'get_marxan_log', 'get_notifications_data', 'get_output_file', 'get_project_data', 'get_projects_for_feature', 'get_projects_for_user', 'get_run_logs',
+privateMembers = ['get_geometry_type', 'add_parameter_to_file', 'check_zipped_shapefile', 'cleanup', 'clone_project', 'create_user', 'create_zipfile', 'delete_all_files', 'delete_archive_files', '_deleteFeature',  'delete_records_in_text_file', 'del_tileset', 'delete_zipped_shapefile', 'dismiss_notification',  'finish_feature_import', '_getAllProjects', 'get_dict_value', 'get_files_in_folder',   'get_key_value', 'get_keys', 'get_marxan_log', 'get_notifications_data', 'get_output_file', 'get_project_data', 'get_projects_for_feature', 'get_projects_for_user', 'get_run_logs',
                   'get_safe_project_name', 'get_species_data', 'get_unique_feature_name', 'get_user_data', 'get_users', 'get_users_data', 'normalize_dataframe', 'pad_dict', '_preprocessProtectedAreas', 'puid_array_to_df', 'raise_error', 'read_file', '_reprocessProtectedAreas', 'reset_notifications', 'run_command', '_setCORS', 'set_folder_paths', 'set_global_vars', 'unzip_file', 'unzip_shapefile', 'update_dataframe', 'update_file_parameters', 'update_run_log', 'update_species_file', '_uploadTileset', 'upload_tileset_to_mapbox', 'validate_args', 'write_csv', 'write_to_file', 'write_df_to_file', 'zip_folder']
 
 for m in privateMembers:
@@ -229,6 +229,22 @@ def log_other_info():
 ####################################################################################################################################################################################################################################################################
 project_paths = None
 db_config = None
+
+
+async def shutdown():
+    global pg
+    if pg:
+        print("Shutting down DB connection pool...")
+        await pg.close_pool()
+    tornado.ioloop.IOLoop.current().stop()
+
+# Catch Ctrl+C or kill signals
+
+
+def setup_shutdown_hooks():
+    loop = asyncio.get_event_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, lambda: asyncio.ensure_future(shutdown()))
 
 
 async def set_global_vars():
@@ -686,7 +702,7 @@ async def finish_feature_import(feature_class_name, name, description, source, u
 
     # Insert metadata for the feature
     try:
-        geometry_type = await pg.getGeometryType(feature_class_name)
+        geometry_type = await pg.get_geometry_type(feature_class_name)
 
         if geometry_type != 'ST_Point':
             # Polygon layer: Calculate total area
@@ -1233,10 +1249,10 @@ class ImportPlanningUnitGrid(BaseHandler):
                 )
 
                 # Import the shapefile into PostGIS
-                await pg.importShapefile(project_paths.IMPORT_FOLDER, f"{root_filename}.shp", feature_class_name)
+                await pg.import_shapefile(project_paths.IMPORT_FOLDER, f"{root_filename}.shp", feature_class_name)
 
                 # Validate and process the geometry
-                await pg.isValid(feature_class_name)
+                await pg.is_valid(feature_class_name)
                 await pg.execute(
                     sql.SQL("ALTER TABLE marxan.{} ALTER COLUMN puid TYPE integer;")
                     .format(sql.Identifier(feature_class_name))
@@ -2440,7 +2456,7 @@ class testTornado(BaseHandler):
 ####################################################################################################################################################################################################################################################################
 
 
-class runMarxan(WebSocketHandler):
+class runMarxan(SocketHandler):
     """REST WebSocket Handler. Starts a Marxan run on the server and streams back the output through WebSocket messages. The required arguments in the request.arguments parameter are:
 
     Args:
@@ -2626,7 +2642,7 @@ class runMarxan(WebSocketHandler):
             self.close({'error': e.args[0]})
 
 
-class importFeatures(WebSocketHandler):
+class importFeatures(SocketHandler):
     """REST WebSocket Handler. Imports a set of features from an unzipped shapefile. This can either be a single feature class or multiple. Sends an error if the feature(s) already exist(s). The required arguments in the request.arguments parameter are:
 
     Args:
@@ -2650,9 +2666,13 @@ class importFeatures(WebSocketHandler):
 
     async def open(self):
         try:
-            await super().open({'info': "Importing features.."})
+            print("WebSocket opened")
+            print("Headers:", self.request.headers)
+            print("Arguments:", self.request.arguments)
             print(
                 "////////////////////// importing featires in the importFeatures Websocket Handeler")
+            await super().open({'info': "Importing features.."})
+
         except ServicesError:  # authentication/authorisation error
             print("///////////////////////////////// services/authentication error.")
             pass
@@ -2672,14 +2692,14 @@ class importFeatures(WebSocketHandler):
                 scratch_name = get_unique_feature_name("scratch_")
                 print('/////////// scratch_name: ', scratch_name)
                 # first, import the shapefile into a PostGIS feature class in EPSG:4326
-                await pg.importShapefile(project_paths.IMPORT_FOLDER, shapefile, scratch_name)
+                await pg.import_shapefile(project_paths.IMPORT_FOLDER, shapefile, scratch_name)
                 # check the geometry
                 self.send_response({
                     'status': 'Preprocessing',
                     'info': "Checking the geometry.."
                 })
                 print("//////// should have imported shapefile")
-                await pg.isValid(scratch_name)
+                await pg.is_valid(scratch_name)
                 # get the feature names
                 if name:  # single feature name
                     feature_names = [name]
@@ -2732,7 +2752,7 @@ class importFeatures(WebSocketHandler):
                     await pg.execute(query, params)
 
                     # add an index and a record in the metadata_interest_features table and start the upload to mapbox
-                    geometryType = await pg.getGeometryType(feature_name)
+                    geometryType = await pg.get_geometry_type(feature_name)
                     source = "Imported shapefile" if (
                         geometryType != 'ST_Point') else "Imported shapefile (points)"
 
@@ -2751,18 +2771,21 @@ class importFeatures(WebSocketHandler):
                 self.close({'info': "Features imported"})
 
             except (ServicesError) as e:
+                print("=========== is this the error ", e)
                 self.close({
                     'info': 'Failed to import features',
                     'error': e.args[0]
                 })
             finally:
                 # delete the scratch feature class
-                await pg.execute(sql.SQL("DROP TABLE IF EXISTS marxan.{}").format(sql.Identifier(scratch_name)))
+                if scratch_name:
+                    query = f'DROP TABLE IF EXISTS marxan."{scratch_name}"'
+                    await pg.execute(query)
 
 # imports an item from GBIF
 
 
-class importGBIFData(WebSocketHandler):
+class importGBIFData(SocketHandler):
     """REST WebSocket Handler. Imports an item using the GBIF API. The required arguments in the request.arguments parameter are:
 
     Args:
@@ -2973,7 +2996,7 @@ class importGBIFData(WebSocketHandler):
             return 'No common name'
 
 
-class createFeaturesFromWFS(WebSocketHandler):
+class createFeaturesFromWFS(SocketHandler):
     """REST WebSocket Handler. Creates a new feature (or set of features) from a WFS endpoint. Sends an error if the feature already exist. The required arguments in the request.arguments parameter are:
 
     Args:
@@ -3027,11 +3050,11 @@ class createFeaturesFromWFS(WebSocketHandler):
                 write_to_file(
                     project_paths.IMPORT_FOLDER + feature_class_name + ".gml", gml)
                 # import the GML into a PostGIS feature class in EPSG:4326
-                await pg.importGml(project_paths.IMPORT_FOLDER, feature_class_name + ".gml", feature_class_name, sEpsgCode=self.get_argument('srs'))
+                await pg.import_gml(project_paths.IMPORT_FOLDER, feature_class_name + ".gml", feature_class_name, sEpsgCode=self.get_argument('srs'))
                 # check the geometry
                 self.send_response(
                     {'status': 'Preprocessing', 'info': "Checking the geometry.."})
-                await pg.isValid(feature_class_name)
+                await pg.is_valid(feature_class_name)
                 # add an index and a record in the metadata_interest_features table and start the upload to mapbox
                 id = await finish_feature_import(feature_class_name, self.get_argument('name'), self.get_argument('description'), "imported from web service", self.get_current_user())
                 # start the upload to mapbox
@@ -3059,7 +3082,7 @@ class createFeaturesFromWFS(WebSocketHandler):
                               feature_class_name + ".gfs")
 
 
-class exportProject(WebSocketHandler):
+class exportProject(SocketHandler):
     """REST WebSocket Handler. Exports a project including all of the spatial data and metadata (not applicable to old version Marxan projects) to an *.mxw file. The required arguments in the request.arguments parameter are:
 
     Args:
@@ -3194,7 +3217,7 @@ class exportProject(WebSocketHandler):
                 return f"PG:host={db_config.DATABASE_HOST} user={db_config.DATABASE_USER} dbname={db_config.DATABASE_NAME} password={db_config.DATABASE_PASSWORD} ACTIVE_SCHEMA=marxan"
 
 
-class ImportProject(WebSocketHandler):
+class ImportProject(SocketHandler):
     """
     REST WebSocket Handler. Imports a *.mxw file as a new project.
 
@@ -3425,7 +3448,7 @@ class ImportProject(WebSocketHandler):
 ####################################################################################################################################################################################################################################################################
 
 
-class QueryWebSocketHandler(WebSocketHandler):
+class QueryWebSocketHandler(SocketHandler):
     """Base class for handling long-running PostGIS queries using WebSockets.
 
     Attributes:
@@ -3489,7 +3512,7 @@ class PreprocessFeature(QueryWebSocketHandler):
                 feature_class_name = self.get_argument('feature_class_name')
                 planning_grid_name = self.get_argument('planning_grid_name')
 
-                geometry_type = await pg.getGeometryType(feature_class_name)
+                geometry_type = await pg.get_geometry_type(feature_class_name)
 
                 if geometry_type != 'ST_Point':
                     # Query for polygon intersection and area
@@ -3974,7 +3997,7 @@ class updateWDPA(QueryWebSocketHandler):
                         self.send_response(
                             {'status': "Preprocessing", 'info': "Importing '" + sourceFeatureClass + "' into PostGIS.."})
                         # import the wdpa to a tmp feature class
-                        await pg.importFileGDBFeatureClass(project_paths.IMPORT_FOLDER, fileGDBPath, sourceFeatureClass, feature_class_name, splitAtDateline=False)
+                        await pg.import_file_GDBFeatureClass(project_paths.IMPORT_FOLDER, fileGDBPath, sourceFeatureClass, feature_class_name, splitAtDateline=False)
                         self.send_response(
                             {'status': "Preprocessing", 'info': "Imported into '" + feature_class_name + "'"})
                         if not unittest:
@@ -4335,7 +4358,7 @@ async def save_rast_metadata(description, filename, activity, activity_name):
         return
 
 
-class SaveRasterHandler(WebSocketHandler):
+class SaveRasterHandler(SocketHandler):
     async def open(self):
         try:
             await super().open({'info': "Uploading raster to database..."})
@@ -4430,7 +4453,7 @@ async def _finishImportingImpact(feature_class_name, activity, description, user
         return
 
 
-class CumulativeImpactHandler(WebSocketHandler):
+class CumulativeImpactHandler(SocketHandler):
     async def open(self):
         try:
             await super().open({'info': "Running Cumulative Impact Function..."})
@@ -4515,7 +4538,7 @@ class CumulativeImpactHandler(WebSocketHandler):
                 })
 
 
-class CreateCostsFromImpactHandler(WebSocketHandler):
+class CreateCostsFromImpactHandler(SocketHandler):
     async def open(self):
         print('CreateCostsFromImpactHandler: ')
         try:
@@ -4660,6 +4683,8 @@ class Application(tornado.web.Application):
         if not hasattr(db_config, 'COOKIE_SECRET') or not db_config.COOKIE_SECRET:
             raise ValueError("db_config.COOKIE_SECRET is not set.")
 
+        print("PG at Application init:", pg)
+
         settings = self._define_settings()
         handlers = self._define_handlers()
         super(Application, self).__init__(handlers, **settings)
@@ -4772,6 +4797,8 @@ async def initialiseApp():
     db_config = DBConfig()
     await set_global_vars()
 
+    # setup_shutdown_hooks()
+
     # LOGGING SECTION
     # turn on logging. Get parent logger. Set the logging level. Set format for streaming logger
     tornado.options.parse_command_line()
@@ -4828,20 +4855,24 @@ async def initialiseApp():
     pg.pool.close()
     await pg.pool.wait_closed()
 
+
 if __name__ == "__main__":
     try:
-        # Initialise the app
         tornado.ioloop.IOLoop.current().run_sync(initialiseApp)
+
     except KeyboardInterrupt:
         if (os.path.exists(project_paths.PROJECT_FOLDER + "shutdown.dat")):
             logging.warning("Deleting the shutdown file")
             os.remove(project_paths.PROJECT_FOLDER + "shutdown.dat")
-        logging.warning("marxan-server stopping due to KeyboardInterrupt")
+        logging.warning("KeyboardInterrupt received, shutting down.")
+        SHUTDOWN_EVENT.set()
+
     except Exception as e:
-        if e.args[0] == 98:
+        if e.args and e.args[0] == 98:
             log(f"The port {db_config.SERVER_PORT} is already in use")
         else:
-            log(e.args)
+            log(f"Unhandled exception: {e}")
+        SHUTDOWN_EVENT.set()
     finally:
         logging.warning("marxan-server stopped")
         SHUTDOWN_EVENT.set()

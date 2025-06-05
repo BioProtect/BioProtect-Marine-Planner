@@ -52,19 +52,25 @@ class SocketHandler(WebSocketHandler):
 
     async def open(self, start_message):
         """Handles WebSocket connection opening."""
+        print("++++++++++++ SUPER.open()")
         try:
             self.start_time = datetime.datetime.now()
             start_message.update({'status': 'Started'})
             self.send_response(start_message)
 
             if "user" in self.request.arguments:
+                print("++++++++++user in args")
+                print("++++++++++setting folder paths")
                 set_folder_paths(self,
                                  self.request.arguments,
                                  project_paths.USERS_FOLDER)
                 if hasattr(self, 'project_folder'):
+                    print("++++++++++++has attr project folder...")
+                    print("++++++++++++getting project folder")
                     await get_project_data(self.pg, self)
 
             if project_paths.DISABLE_SECURITY:
+                print("+++++++++ disable security")
                 return
 
             if not self.current_user:
@@ -72,16 +78,22 @@ class SocketHandler(WebSocketHandler):
                     '+++++++++++++++++++ problem here = self.current_user: ', self.current_user)
                 raise HTTPError(401, "User not authenticated")
 
+            print("++++++ authorising request")
             self._authorize_request()
+            print("++++++ sending response")
 
             self.send_response(
                 {"status": "Preprocessing", "info": "Preprocessing..."})
+
+            print("++++++ ping aling")
 
             self.ping_callback = PeriodicCallback(self._send_ping, 30000)
             self.ping_callback.start()
             self.client_sent_final_msg = False
 
         except HTTPError as e:
+            print("++++++ is this the error", e)
+
             self._handle_connection_error(e)
 
     def _authorize_request(self):
@@ -90,6 +102,8 @@ class SocketHandler(WebSocketHandler):
         print('+++++++++++++++++++method: ', method)
 
         role = self.get_secure_cookie("role")
+        print('+++++++++++++++++++role: ', role)
+
         if not role:
             print('+++++++++++++++++++  role is the issue: ', role)
             raise HTTPError(403, "Unauthorized: Role not found.")
