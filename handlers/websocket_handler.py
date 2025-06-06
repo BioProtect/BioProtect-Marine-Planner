@@ -25,93 +25,77 @@ class SocketHandler(WebSocketHandler):
         self.pg = await get_pg
 
     def prepare(self):
-        print("WebSocket prepare: headers =", self.request.headers)
         if not self.get_secure_cookie("user"):
             raise HTTPError(403, reason="User not authenticated")
 
     def get_current_user(self):
         """Retrieves the currently authenticated user."""
         user_cookie = self.get_secure_cookie("user")
-        print('++++++++++++++++++++++++++++user_cookie: ', user_cookie)
         return user_cookie.decode("utf-8") if user_cookie else None
 
     def check_origin(self, origin):
         """Checks CORS access for the WebSocket."""
         if project_paths.DISABLE_SECURITY:
-            print('++++++++++++++++++++++++++++++project_paths.DISABLE_SECURITY: ',
-                  project_paths.DISABLE_SECURITY)
             return True
 
         parsed_origin = urlparse(origin)
-        print('parsed_origin: ', parsed_origin)
         if origin in project_paths.PERMITTED_DOMAINS or parsed_origin.netloc.find(self.request.host_name) != -1:
             return True
-        print("++++++++++++error happeneing here.")
         raise HTTPError(403, f"The origin '{
                         origin}' does not have permission to access the service (CORS error)")
 
     async def open(self, start_message):
         """Handles WebSocket connection opening."""
-        print("++++++++++++ SUPER.open()")
+        print("================== websocket open method")
         try:
             self.start_time = datetime.datetime.now()
             start_message.update({'status': 'Started'})
             self.send_response(start_message)
 
             if "user" in self.request.arguments:
-                print("++++++++++user in args")
-                print("++++++++++setting folder paths")
+                print("================== user in args")
                 set_folder_paths(self,
                                  self.request.arguments,
                                  project_paths.USERS_FOLDER)
                 if hasattr(self, 'project_folder'):
-                    print("++++++++++++has attr project folder...")
-                    print("++++++++++++getting project folder")
                     await get_project_data(self.pg, self)
 
-            if project_paths.DISABLE_SECURITY:
-                print("+++++++++ disable security")
-                return
+            # if project_paths.DISABLE_SECURITY:
+            #     print('project_paths.DISABLE_SECURITY: ',
+            #           project_paths.DISABLE_SECURITY)
+            #     return
 
             if not self.current_user:
-                print(
-                    '+++++++++++++++++++ problem here = self.current_user: ', self.current_user)
                 raise HTTPError(401, "User not authenticated")
 
-            print("++++++ authorising request")
             self._authorize_request()
-            print("++++++ sending response")
-
-            self.send_response(
-                {"status": "Preprocessing", "info": "Preprocessing..."})
-
-            print("++++++ ping aling")
-
+            self.send_response({
+                "status": "Preprocessing",
+                "info": "Preprocessing..."
+            })
+            print("=========================== setting ping_callback ", self)
             self.ping_callback = PeriodicCallback(self._send_ping, 30000)
             self.ping_callback.start()
             self.client_sent_final_msg = False
 
         except HTTPError as e:
-            print("++++++ is this the error", e)
-
             self._handle_connection_error(e)
 
     def _authorize_request(self):
         """Handles authorization logic for WebSocket requests."""
         method = self.request.path.strip("/").split("/")[-1]
-        print('+++++++++++++++++++method: ', method)
+        print('method: ', method)
 
         role = self.get_secure_cookie("role")
-        print('+++++++++++++++++++role: ', role)
+        print('role: ', role)
 
         if not role:
-            print('+++++++++++++++++++  role is the issue: ', role)
             raise HTTPError(403, "Unauthorized: Role not found.")
 
         role = role.decode("utf-8")
         requested_user = self.get_argument("user", None)
+        print('requested_user: ', requested_user)
         if not requested_user:
-            print('+++++++++++++++++++++ requested_user: ', requested_user)
             return
 
         if requested_user == "_clumping":
@@ -153,7 +137,7 @@ class SocketHandler(WebSocketHandler):
 
     def close(self, close_message=None, clean=True):
         """Closes the WebSocket connection."""
-        if self.ping_callback.is_running:
+        if hasattr(self, 'ping_callback') and self.ping_callback.is_running:
             self.ping_callback.stop()
 
         if clean:

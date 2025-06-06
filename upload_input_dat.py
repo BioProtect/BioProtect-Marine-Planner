@@ -24,19 +24,19 @@ async def upload_input_dat(pg, project_id: int, input_dat_path: str):
         if key in input_file_params:
             await pg.execute("""
                 INSERT INTO public.project_files (project_id, file_type, file_name)
-                VALUES ($1, $2, $3)
+                VALUES (%s, %s, %s)
             """, [project_id, param, value])
 
         elif key in run_params:
             await pg.execute("""
                 INSERT INTO public.project_run_parameters (project_id, key, value)
-                VALUES ($1, $2, $3)
+                VALUES (%s, %s, %s)
             """, [project_id, param, str(value)])
 
         elif key in renderer_params:
             await pg.execute("""
                 INSERT INTO public.project_renderer (project_id, key, value)
-                VALUES ($1, $2, $3)
+                VALUES (%s, %s, %s)
             """, [project_id, param, str(value)])
 
         # Collect metadata values for a single UPDATE
@@ -54,7 +54,7 @@ async def upload_input_dat(pg, project_id: int, input_dat_path: str):
             elif param == "PLANNING_UNIT_NAME":
                 result = await pg.execute("""
                     SELECT unique_id FROM marxan.metadata_planning_units
-                    WHERE feature_class_name = $1
+                    WHERE feature_class_name = %s
                 """, [value], return_format="Dict")
                 if result:
                     metadata_update["planning_unit_id"] = result[0]["unique_id"]

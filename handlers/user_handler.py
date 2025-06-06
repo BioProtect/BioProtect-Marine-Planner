@@ -119,7 +119,7 @@ class UserHandler(BaseHandler):
             new_user = await self.pg.execute(
                 """
                 INSERT INTO users (username, email, password_hash, role, report_units, basemap, date_created, show_popup, use_feature_colours)
-                VALUES ($1, $2, $3, 'Admin', 'Km2', 'Light', CURRENT_TIMESTAMP, FALSE, FALSE)
+                VALUES (%s, %s, %s, 'Admin', 'Km2', 'Light', CURRENT_TIMESTAMP, FALSE, FALSE)
                 """,
                 data=[username, email, password_hash],
                 return_format="Dict"
@@ -154,7 +154,7 @@ class UserHandler(BaseHandler):
 
         query = """
                 SELECT id, username, password_hash, role, last_project, show_popup, basemap, use_feature_colours, report_units, refresh_tokens
-                FROM users WHERE username = $1
+                FROM users WHERE username = %s
             """
         userData = await self.pg.execute(query, [self.get_current_user()], return_format="Dict")
 
@@ -221,7 +221,7 @@ class UserHandler(BaseHandler):
             return
 
         if user_id:
-            query = query + "FROM users WHERE id = $1"
+            query = query + "FROM users WHERE id = %s"
             result = await self.pg.execute(query, data=[user_id], return_format="Dict")
             if not result:
                 self.set_status(404)
@@ -284,7 +284,7 @@ class UserHandler(BaseHandler):
         Delete a user.
         """
         try:
-            query = "DELETE FROM users WHERE id = $1"
+            query = "DELETE FROM users WHERE id = %s"
             result = await self.pg.execute(query, int(user_id))
             if result == "DELETE 0":
                 self.set_status(404)

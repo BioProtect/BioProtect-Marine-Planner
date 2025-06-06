@@ -51,7 +51,7 @@ class ProjectHandler(BaseHandler):
     async def get_project_by_id(self, project_id):
         """Fetch project details based on project ID."""
         query = """
-            SELECT * FROM projects WHERE id = $1;
+            SELECT * FROM projects WHERE id = %s;
         """
         result = await self.pg.execute(query, [project_id], return_format="Dict")
         # ✅ Returns first result or None if not found
@@ -110,7 +110,7 @@ class ProjectHandler(BaseHandler):
             FROM public.projects p
             LEFT JOIN marxan.metadata_planning_units pu
                 ON p.planning_unit_id = pu.unique_id
-            WHERE p.user_id = $1
+            WHERE p.user_id = %s
             ORDER BY LOWER(p.name)
         """, [user_id], return_format="Dict")
 
@@ -123,18 +123,18 @@ class ProjectHandler(BaseHandler):
 
             # Fetch run parameters
             run_params = await self.pg.execute("""
-                SELECT key, value FROM public.project_run_parameters WHERE project_id = $1
+                SELECT key, value FROM public.project_run_parameters WHERE project_id = %s
             """, [project_id], return_format="Dict")
 
             # Fetch input files
             files = await self.pg.execute("""
-                SELECT file_type, file_name FROM public.project_files WHERE project_id = $1
+                SELECT file_type, file_name FROM public.project_files WHERE project_id = %s
             """, [project_id], return_format="Dict")
             files_dict = {f["file_type"]: f["file_name"] for f in files}
 
             # Fetch renderer config
             renderer = await self.pg.execute("""
-                SELECT key, value FROM public.project_renderer WHERE project_id = $1
+                SELECT key, value FROM public.project_renderer WHERE project_id = %s
             """, [project_id], return_format="Dict")
             renderer_dict = {r["key"]: r["value"] for r in renderer}
 
@@ -154,7 +154,7 @@ class ProjectHandler(BaseHandler):
                 FROM public.project_feature pf
                 JOIN marxan.metadata_interest_features f
                   ON f.unique_id = pf.feature_unique_id
-                WHERE pf.project_id = $1
+                WHERE pf.project_id = %s
                 ORDER BY f.alias
             """, [project_id], return_format="Dict")
 
@@ -165,14 +165,14 @@ class ProjectHandler(BaseHandler):
                     SELECT mp.alias, mp.description, mp.domain, mp._area AS area, mp.creation_date, mp.created_by, g.original_n AS country
                     FROM marxan.metadata_planning_units mp
                     LEFT OUTER JOIN marxan.gaul_2015_simplified_1km g ON g.id_country = mp.country_id
-                    WHERE mp.unique_id = $1
+                    WHERE mp.unique_id = %s
                 """, [project["planning_unit_id"]], return_format="DataFrame")
 
                 # df = await self.pg.execute("""
                 #     SELECT alias, description, domain, _area AS area, creation_date,
                 #         created_by, original_n AS country
                 #     FROM marxan.metadata_planning_units
-                #     WHERE unique_id = $1
+                #     WHERE unique_id = %s
                 # """, [project["planning_unit_id"]], return_format="DataFrame")
 
                 if not df.empty:
@@ -230,7 +230,7 @@ class ProjectHandler(BaseHandler):
 
     #     # 1. Get main project record
     #     project_row = await pg.execute(
-    #         """SELECT p.* FROM public.projects WHERE id = $1""",
+    #         """SELECT p.* FROM public.projects WHERE id = %s""",
     #         [project_id],
     #         return_format="Dict"
     #     )
@@ -244,7 +244,7 @@ class ProjectHandler(BaseHandler):
     #         df = await pg.execute("""
     #             SELECT alias, description, domain, _area AS area, creation_date, created_by, original_n AS country
     #             FROM marxan.metadata_planning_units
-    #             WHERE unique_id = $1
+    #             WHERE unique_id = %s
     #         """, [project_row["planning_unit_id"]], return_format="DataFrame")
 
     #         if not df.empty:
@@ -261,18 +261,18 @@ class ProjectHandler(BaseHandler):
 
     #     # 3. Get run parameters
     #     run_params = await pg.execute("""
-    #         SELECT key, value FROM public.project_run_parameters WHERE project_id = $1
+    #         SELECT key, value FROM public.project_run_parameters WHERE project_id = %s
     #     """, [project_id], return_format="Dict")
 
     #     # 4. Get input files
     #     files = await pg.execute("""
-    #         SELECT file_type, file_name FROM public.project_files WHERE project_id = $1
+    #         SELECT file_type, file_name FROM public.project_files WHERE project_id = %s
     #     """, [project_id], return_format="Dict")
     #     files_dict = {row["file_type"]: row["file_name"] for row in files}
 
     #     # 5. Get renderer settings
     #     renderer = await pg.execute("""
-    #         SELECT key, value FROM public.project_renderer WHERE project_id = $1
+    #         SELECT key, value FROM public.project_renderer WHERE project_id = %s
     #     """, [project_id], return_format="Dict")
     #     renderer_dict = {r["key"]: r["value"] for r in renderer}
 
@@ -512,7 +512,7 @@ class ProjectHandler(BaseHandler):
             SELECT p.*
             FROM projects p
             JOIN user_projects up ON p.id = up.project_id
-            WHERE up.user_id = $1
+            WHERE up.user_id = %s
             ORDER BY p.date_created ASC
             LIMIT 1;
         """
@@ -568,7 +568,7 @@ class ProjectHandler(BaseHandler):
 
                 if key == 'PLANNING_UNIT_NAME':
                     df = await self.pg.execute(
-                        "SELECT * FROM marxan.get_planning_units_metadata($1)",
+                        "SELECT * FROM marxan.get_planning_units_metadata(%s)",
                         data=[key_value[1]], return_format="DataFrame")
 
                     if df.empty:

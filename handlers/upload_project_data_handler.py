@@ -38,25 +38,25 @@ class UploadInputDatHandler(BaseHandler):
 
                 if key in input_file_params:
                     await self.pg.execute(
-                        "INSERT INTO public.project_files (project_id, file_type, file_name) VALUES ($1, $2, $3)",
+                        "INSERT INTO public.project_files (project_id, file_type, file_name) VALUES (%s, %s, %s)",
                         [project_id, param, value]
                     )
 
                 elif key in run_params:
                     await self.pg.execute(
-                        "INSERT INTO public.project_run_parameters (project_id, key, value) VALUES ($1, $2, $3)",
+                        "INSERT INTO public.project_run_parameters (project_id, key, value) VALUES (%s, %s, %s)",
                         [project_id, param, str(value)]
                     )
 
                 elif key in renderer_params:
                     await self.pg.execute(
-                        "INSERT INTO public.project_renderer (project_id, key, value) VALUES ($1, $2, $3)",
+                        "INSERT INTO public.project_renderer (project_id, key, value) VALUES (%s, %s, %s)",
                         [project_id, param, str(value)]
                     )
 
                 elif key in metadata_params:
                     await self.pg.execute(
-                        "INSERT INTO public.project_metadata (project_id, key, value) VALUES ($1, $2, $3)",
+                        "INSERT INTO public.project_metadata (project_id, key, value) VALUES (%s, %s, %s)",
                         [project_id, param, str(value)]
                     )
 
@@ -64,12 +64,12 @@ class UploadInputDatHandler(BaseHandler):
                         # Get planning unit id and update project
                         result = await self.pg.execute("""
                             SELECT unique_id FROM marxan.metadata_planning_units
-                            WHERE feature_class_name = $1
+                            WHERE feature_class_name = %s
                         """, [value], return_format="Dict")
                         if result:
                             planning_unit_id = result[0]["unique_id"]
                             await self.pg.execute(
-                                "UPDATE public.projects SET planning_unit_id = $1 WHERE id = $2",
+                                "UPDATE public.projects SET planning_unit_id = %s WHERE id = %s",
                                 [planning_unit_id, project_id]
                             )
 

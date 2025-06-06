@@ -689,8 +689,8 @@ async def finish_feature_import(feature_class_name, name, description, source, u
     # Add a primary key to the table
     try:
         await pg.execute(
-            sql.SQL("ALTER TABLE marxan.{} DROP COLUMN IF EXISTS id, ogc_fid;")
-            .format(sql.Identifier(feature_class_name))
+            sql.SQL("ALTER TABLE marxan.{} DROP COLUMN IF EXISTS id, DROP COLUMN IF EXISTS ogc_fid;"
+                    ).format(sql.Identifier(feature_class_name))
         )
         await pg.execute(
             sql.SQL("ALTER TABLE marxan.{} ADD COLUMN id SERIAL PRIMARY KEY;")
@@ -1056,7 +1056,9 @@ class AuthHandler(BaseHandler):
             # comment:
             body = json_decode(self.request.body)
             username = body.get("user")
+            print('============================username: ', username)
             pwd = body.get("pwd")
+            print('pwd: ', pwd)
 
             if not username or not pwd:
                 self.set_status(400)
@@ -1066,7 +1068,7 @@ class AuthHandler(BaseHandler):
             # Query user from PostgreSQL
             query = """
                 SELECT id, username, password_hash, role, last_project, show_popup, basemap, use_feature_colours, report_units, refresh_tokens
-                FROM users WHERE username = $1
+                FROM users WHERE username = %s
             """
             result = await pg.execute(query, [username], return_format="Dict")
             print('result: ', result)
@@ -1114,7 +1116,7 @@ class AuthHandler(BaseHandler):
             valid_refresh_tokens.append(refresh_token)
 
             # Update refresh tokens in the database
-            update_query = "UPDATE users SET refresh_tokens = $1 WHERE id = $2"
+            update_query = "UPDATE users SET refresh_tokens = %s WHERE id = %s"
             await pg.execute(update_query, [valid_refresh_tokens, user["id"]])
 
             # Set secure cookie for refresh token
@@ -1132,7 +1134,7 @@ class AuthHandler(BaseHandler):
             # Fetch user's projects
             project_query = """
                 SELECT id, name, description, date_created
-                FROM projects WHERE user_id = $1
+                FROM projects WHERE user_id = %s
             """
             project_result = await pg.execute(project_query, [user['id']], return_format="Dict")
 

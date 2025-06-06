@@ -23,7 +23,7 @@ async def insert_species_data(project_id):
     # Insert into species_data table
     query = """
         INSERT INTO species_data (project_id, feature_unique_id, prop, spf)
-        VALUES ($1, $2, $3, $4)
+        VALUES (%s, %s, %s, %s)
     """
     await conn.executemany(query, values)
     await conn.close()

@@ -9,7 +9,7 @@
 
     ```python
     if key == "PLANNING_UNIT_NAME":
-        df = await pg.execute("SELECT * FROM marxan.get_planning_units_metadata($1)", data=[key_value[1]], return_format="DataFrame")
+        df = await pg.execute("SELECT * FROM marxan.get_planning_units_metadata(%s)", data=[key_value[1]], return_format="DataFrame")
     ```
 
     The planningn unit metadata is in the following format:
