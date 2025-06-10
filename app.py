@@ -2671,8 +2671,6 @@ class importFeatures(SocketHandler):
             print("WebSocket opened")
             print("Headers:", self.request.headers)
             print("Arguments:", self.request.arguments)
-            print(
-                "////////////////////// importing featires in the importFeatures Websocket Handeler")
             await super().open({'info': "Importing features.."})
 
         except ServicesError:  # authentication/authorisation error
@@ -2681,6 +2679,8 @@ class importFeatures(SocketHandler):
         else:
             # validate the input arguments
             validate_args(self.request.arguments, ['shapefile'])
+            print('========================= self.request.arguments: ',
+                  self.request.arguments)
             # get the name of the shapefile that has already been unzipped on the server
             shapefile = self.get_argument('shapefile')
             print('///////////////// shapefile: ', shapefile)
@@ -2724,28 +2724,30 @@ class importFeatures(SocketHandler):
                     # create the new feature class
                     is_single = bool(name)
                     prefix = "f_" if is_single else "fs_"
-                    feature_name = get_unique_feature_name(prefix)
+                    feature_class_name = get_unique_feature_name(prefix)
                     params = [feature_name]
 
                     # single feature vs shapefile with multiple features
                     if is_single:
                         # No WHERE clause for single import
                         query = sql.SQL("""
-                            CREATE TABLE marxan.{feature_name} AS
+                            CREATE TABLE marxan.{feature_class_name} AS
                             SELECT * FROM marxan.{scratch_table};
                         """).format(
-                            feature_name=sql.Identifier(feature_name),
+                            feature_class_name=sql.Identifier(
+                                feature_class_name),
                             scratch_table=sql.Identifier(scratch_name)
                         )
                         description = self.get_argument("description")
                     else:
                         # Filter by field value for multi-import
                         query = sql.SQL("""
-                            CREATE TABLE marxan.{feature_name} AS
+                            CREATE TABLE marxan.{feature_class_name} AS
                             SELECT * FROM marxan.{scratch_table}
                             WHERE {split_field} = %s;
                         """).format(
-                            feature_name=sql.Identifier(feature_name),
+                            feature_class_name=sql.Identifier(
+                                feature_class_name),
                             scratch_table=sql.Identifier(scratch_name),
                             split_field=sql.Identifier(splitfield)
                         )
@@ -2754,18 +2756,18 @@ class importFeatures(SocketHandler):
                     await pg.execute(query, params)
 
                     # add an index and a record in the metadata_interest_features table and start the upload to mapbox
-                    geometryType = await pg.get_geometry_type(feature_name)
+                    geometryType = await pg.get_geometry_type(feature_class_name)
                     source = "Imported shapefile" if (
                         geometryType != 'ST_Point') else "Imported shapefile (points)"
 
-                    id = await finish_feature_import(feature_name,
+                    id = await finish_feature_import(feature_class_name,
                                                      feature_name,
                                                      description,
                                                      source,
                                                      self.get_current_user())
                     self.send_response({
                         'id': id,
-                        'feature_name': feature_name,
+                        'feature_class_name': feature_class_name,
                         'info': f"Feature '{feature_name}' imported",
                         'status': 'FeatureCreated'
                     })
@@ -2773,11 +2775,14 @@ class importFeatures(SocketHandler):
                 self.close({'info': "Features imported"})
 
             except (ServicesError) as e:
-                print("=========== is this the error ", e)
-                self.close({
-                    'info': 'Failed to import features',
-                    'error': e.args[0]
-                })
+                if "already exists" in e.args[0]:
+                    self.close({'error': "The feature '" + feature_name +
+                               "' already exists", 'info': 'Failed to import features'})
+                else:
+                    self.close({
+                        'info': 'Failed to import features',
+                        'error': e.args[0]
+                    })
             finally:
                 # delete the scratch feature class
                 if scratch_name:
