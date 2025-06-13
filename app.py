@@ -4279,7 +4279,13 @@ class GetUploadedActivitiesHandler(BaseHandler):
         print('Get all uploaded activities handerler.....')
         try:
             # get all the species data
-            self.allUploadedActivities = await pg.execute("SELECT id, filename, activity, description, to_char(creation_date, 'DD/MM/YY HH24:MI:SS')::text AS creation_date, source, created_by FROM marxan.metadata_activities ORDER BY lower(activity);", return_format="DataFrame")
+            query = """
+                SELECT id, filename, activity, description, to_char(creation_date, 'DD/MM/YY HH24:MI:SS')::text 
+                AS creation_date, source, created_by 
+                FROM marxan.metadata_activities 
+                ORDER BY lower(activity);
+            """
+            self.allUploadedActivities = await pg.execute(query, return_format="DataFrame")
 
             # set the response
             self.send_response({"info": "All activity data received",
