@@ -542,14 +542,14 @@ def normalize_dataframe(df, column_to_normalize_by, puid_column_name, classes=No
     ]
 
 
-def validate_args(arguments, required_arguments):
+def validate_args(arguments, req_arguments):
     # sourcery skip: use-named-expression
     """
     Validates that all required arguments are present in the provided arguments dictionary.
 
     Args:
         arguments (dict): Dictionary of arguments (e.g., from a Tornado HTTP request).
-        required_arguments (list[str]): List of required argument names.
+        req_arguments (list[str]): List of required argument names.
 
     Returns:
         None
@@ -557,11 +557,12 @@ def validate_args(arguments, required_arguments):
     Raises:
         ServicesError: If any required arguments are missing.
     """
-    missing_arguments = [
-        arg for arg in required_arguments if arg not in arguments]
-    if missing_arguments:
-        raise ServicesError(f"Missing input arguments: {
-                            ', '.join(missing_arguments)}")
+    missing_args = [arg for arg in req_arguments if arg not in arguments]
+    if missing_args:
+        raise ServicesError(
+            f"Missing input arguments: {', '.join(missing_args)}")
+    print("Args validated... ", Fore.CYAN)
+    return
 
 
 async def upload_tileset_to_mapbox(feature_class_name, mapbox_layer_name=None):
@@ -4295,86 +4296,65 @@ class GetUploadedActivitiesHandler(BaseHandler):
 
 
 class UploadRasterHandler(BaseHandler):
-    def post(self):
+    async def post(self):
         try:
-            print('uploadRaster....')
+            log("Uploading Raster..... ", Fore.YELLOW)
             validate_args(self.request.arguments, [
                 'activity', 'filename'])
             activity = self.get_argument('activity')
             filename = self.get_argument('filename')
-
             uploaded_rast = self.request.files['value'][0].body
 
-            with engine.begin() as connection:
-                pad_data = connection.execute(
-                    f"""select activitytitle, pressuretitle, rppscore from marxan.pad WHERE pad.activitytitle = '{activity}';""").fetchall()
+            pad_data = await pg.execute(
+                """
+                SELECT activitytitle, pressuretitle, rppscore 
+                FROM marxan.pad 
+                WHERE activitytitle = %s
+                """,
+                data=[activity],
+                return_format="Array"
+            )
 
-            print('reprojecting and normalising uploaded raster....')
+            log('reprojecting and normalising uploaded raster....', Fore.YELLOW)
             with MemoryFile(uploaded_rast) as memfile:
                 ds = memfile.open()
                 uploaded = reproject_and_normalise_upload(
                     raster_name=filename,
                     data=ds,
-                    reprojection_crs=config["jose_crs_str"],
-                    wgs84=config["wgs84_str"],
+                    reprojection_crs=project_paths.gis_config["jose_crs_str"],
+                    wgs84=project_paths.gis_config["wgs84_str"],
                 )
 
-            print('creating pressures.....')
+            log('Creating pressures....', Fore.YELLOW)
+
             with rasterio.open(uploaded, 'r+') as src:
                 meta = src.meta
                 band = np.ma.masked_values(src.read(1, masked=True), 0)
                 for pressure in pad_data:
                     new_band = band.copy()
-                    update_band = new_band*pressure[2]
-                    title = f"data/pressures/{replace_chars(pressure[1])}.tif"
+                    update_band = new_band*pressure["rppscore"]
+                    title = f"data/pressures/{replace_chars(pressure["pressuretitle"])}.tif"
 
                     with rasterio.open(title, 'w', **meta) as dst:
                         dst.write(update_band, 1)
 
             self.send_response({
-                'info': "File '" + filename + "' uploaded and pressures created",
+                'info': f"File {filename} uploaded and pressures created",
                 'file': filename
             })
         except ServicesError as e:
             raise_error(self, e.args[0])
-        finally:
-            return
-
-
-async def save_rast_metadata(description, filename, activity, activity_name):
-    print('saving raster metadata...')
-    data_array = None
-    try:
-        data_array = await pg.execute(sql.SQL("""
-            INSERT INTO marxan.metadata_activities
-            (creation_date, description, source, created_by,
-             filename, activity, activity_name, extent)
-            SELECT
-                now(), %s, %s, %s, %s, %s, %s, rast.extent FROM
-                (SELECT Box2D(ST_Envelope(rast)) extent
-                FROM ( SELECT rid, rast FROM marxan.{}) as rast2 ) as rast
-            RETURNING id""").format(sql.Identifier(activity_name)),
-            data=[description, "raster", "cartig",
-                  filename.lower(), activity, activity_name],
-            return_format="Array")
-        print('data_array: ', data_array)
-        return data_array
-    except (ServicesError) as e:
-        print('e: ', e)
-        self.close({
-            'error': e.args[0],
-            'info': 'Error uploading to database....'
-        })
-    finally:
-        if data_array is not None:
-            return data_array[0]
-        return
+        except Exception as e:
+            import traceback
+            print("Unexpected error:", str(e))
+            traceback.print_exc()
+            raise_error(self, "Unhandled exception: " + str(e))
 
 
 class SaveRasterHandler(SocketHandler):
     async def open(self):
         try:
-            await super().open({'info': "Uploading raster to database..."})
+            await super().open({'info': "Uploading raster to..."})
         except ServicesError as e:  # authentication/authorisation error
             print('ServicesError as e: ', e)
             pass
@@ -4402,8 +4382,24 @@ class SaveRasterHandler(SocketHandler):
                     'error': e.args[0],
                     'info': 'Error saving raster to database....'
                 })
+            data_array = None
             try:
-                data_array = await save_rast_metadata(description, filename, activity, activity_name)
+                query = sql.SQL("""
+                    INSERT INTO marxan.metadata_activities 
+                    (creation_date, description, source, created_by, filename, activity, activity_name, extent)
+                    SELECT
+                        now(), %s, %s, %s, %s, %s, %s, rast.extent 
+                    FROM
+                        (SELECT Box2D(ST_Envelope(rast)) extent
+                    FROM 
+                        (SELECT rid, rast FROM marxan.{}) as rast2 ) as rast
+                    RETURNING id""").format(sql.Identifier(activity_name)),
+
+                data_array = await pg.execute(query, data=[
+                    description, "raster", "cartig", filename.lower(), activity, activity_name
+                ], return_format="Array")
+                print('data_array: ', data_array)
+
                 self.close({
                     'info': "Raster uploaded and saved to database",
                     'data_array': data_array
@@ -4509,9 +4505,10 @@ class CumulativeImpactHandler(SocketHandler):
                                          out_file='./data/tmp/impact.tif')
             impact_file = 'data/tmp/impact.tif'
             cropped_impact = 'data/uploaded_rasters/'+feature_class_name+'.tif'
-            project_raster(rast1='data/tmp/impact.tif',
-                           template_file='data/rasters/all_habitats.tif',
-                           output_file=impact_file)
+
+            reproject_raster(input_path='data/tmp/impact.tif',
+                             output_folder=impact_file,
+                             reference_raster='data/rasters/all_habitats.tif')
 
             wgs84_rast = reproject_raster(file_path=impact_file,
                                           output_folder='data/uploaded_rasters/')
@@ -4828,9 +4825,8 @@ async def initialiseApp():
     if not project_paths.DISABLE_FILE_LOGGING:
         file_log_handler = logging.FileHandler(
             os.path.join(project_paths.PROJECT_FOLDER, 'marxan-server.log'))
-        file_log_handler.setFormatter(LogFormatter(fmt=f1 + f2,
-                                                   datefmt='%d-%m-%y %H:%M:%S',
-                                                   color=False))
+        file_log_handler.setFormatter(LogFormatter(
+            fmt=f1 + f2, datefmt='%d-%m-%y %H:%M:%S', color=False))
         root_logger.addHandler(file_log_handler)
 
     app = Application()
@@ -4838,13 +4834,17 @@ async def initialiseApp():
     if project_paths.CERTFILE is None:
         app.listen(db_config.SERVER_PORT)
     else:
-        app.listen(db_config.SERVER_PORT,
-                   ssl_options={"certfile": project_paths.CERTFILE,
-                                "keyfile": project_paths.KEYFILE})
+        app.listen(db_config.SERVER_PORT, ssl_options={
+            "certfile": project_paths.CERTFILE,
+            "keyfile": project_paths.KEYFILE
+        })
 
     protocol = "https://" if project_paths.CERTFILE != None else "http://"
-    navigateTo = f"{protocol}<host>:{
-        db_config.SERVER_PORT}/index.html" if db_config.SERVER_PORT != 80 else f"{protocol}<host>/index.html"
+
+    if db_config.SERVER_PORT != 80:
+        navigateTo = f"{protocol}<host>:{db_config.SERVER_PORT}/index.html"
+    else:
+        navigateTo = f"{protocol}<host>/index.html"
 
     # open the web browser if the call includes a url, e.g. python marxan-server.py http://localhost/index.html
     if len(sys.argv) > 1:
@@ -4852,16 +4852,18 @@ async def initialiseApp():
             log("Ignoring <url> parameter - the marxan-client is not installed", Fore.GREEN)
         else:
             url = sys.argv[1]  # normally "http://localhost/index.html"
-            log("Opening Marxan Web at '" + url + "' ..\n", Fore.GREEN)
+            log(f"Opening Marxan Web at {url} ..\n  {Fore.GREEN}")
             webbrowser.open(url, new=1, autoraise=True)
+
     elif MARXAN_CLIENT_VERSION != "Not installed":
-        log("Goto to " + navigateTo + " to open Marxan Web", Fore.GREEN)
-        log("Or run 'python marxan-server.py " + navigateTo +
-            "' to automatically open Marxan Web in a browser\n", Fore.GREEN)
+        log(f"Goto to {navigateTo} to open Marxan Web {Fore.GREEN}")
+        log(
+            f"Or run 'python marxan-server.py {navigateTo} to open a browser\n {Fore.GREEN}")
     logging.warning("marxan-server started")
     # otherwise subprocesses fail on windows
     if platform.system() == "Windows":
         asyncio.set_event_loop_policy(AnyThreadEventLoopPolicy())
+
     await SHUTDOWN_EVENT.wait()
     log("Closing Postgres connections..")
     # close the database connection
@@ -4874,9 +4876,10 @@ if __name__ == "__main__":
         tornado.ioloop.IOLoop.current().run_sync(initialiseApp)
 
     except KeyboardInterrupt:
-        if (os.path.exists(project_paths.PROJECT_FOLDER + "shutdown.dat")):
+        shutdown_dat = project_paths.PROJECT_FOLDER + "shutdown.dat"
+        if (os.path.exists(shutdown_dat)):
             logging.warning("Deleting the shutdown file")
-            os.remove(project_paths.PROJECT_FOLDER + "shutdown.dat")
+            os.remove(shutdown_dat)
         logging.warning("KeyboardInterrupt received, shutting down.")
         SHUTDOWN_EVENT.set()
 

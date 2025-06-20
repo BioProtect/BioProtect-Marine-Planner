@@ -110,7 +110,9 @@ class FolderPathConfig:
         jncc_cleaned = jncc_cleaned.drop_duplicates(
             subset=["EUNIS_Code_Assessment", "MarESA_Pressure"])
         jncc_cleaned.rename(columns={
-                            'EUNIS_Code_Assessment': 'EUNIS_Code', 'MarESA_Pressure': 'Pressure'}, inplace=True)
+            'EUNIS_Code_Assessment': 'EUNIS_Code',
+            'MarESA_Pressure': 'Pressure'
+        }, inplace=True)
 
         return jncc_cleaned.reset_index(drop=True)
 

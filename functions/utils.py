@@ -2,8 +2,10 @@ import csv
 import ctypes
 import glob
 import io
+import os
 import platform
 import re
+import string
 import subprocess
 from operator import itemgetter
 from os import pardir, path, sep
@@ -15,11 +17,12 @@ import geopandas as gpd
 import numpy as np
 import psutil
 import rasterio
-from classes.folder_path_config import get_folder_path_config
 from classes.db_config import get_db_config
+from classes.folder_path_config import get_folder_path_config
 from mapbox import Uploader
 from osgeo import gdal, gdalconst
 from pyproj import CRS
+from rasterio.enums import Resampling as ResampleEnum
 from rasterio.warp import Resampling, calculate_default_transform, reproject
 from services.service_error import ServicesError
 from sqlalchemy import create_engine
@@ -33,9 +36,10 @@ db_config = get_db_config()
 
 
 def replace_chars(text):
-    out = text.translate(str.maketrans("", "", punctuation))
-    out = out.replace("  ", "_").replace(" ", "_").lower()
-    return out
+    cleaned = text.translate(str.maketrans("", "", string.punctuation))
+    # Replace any sequence of whitespace with a single underscore
+    cleaned = re.sub(r"\s+", "_", cleaned)
+    return cleaned.lower()
 
 
 def pad_dict(k, val, width=25):
@@ -82,41 +86,44 @@ def get_free_space_gb():
     return f"{space_gb:.1f} Gb"  # Format and return as a string
 
 
-def get_tif_list(tif_dir, file_type):
+def get_tif_list(tif_dir, extension="tif"):
     """Get a list of all the tifs in a directory
 
     Keyword arguments:
     tif_dir -- the directory where the list of tifs is
     Return: a sorted list of dictionaries containing the filename and path
     """
-    return sorted([{
-        "label": ".".join(filename.split('/')[-1].split('.')[0:-1]),
-        "path": filename
-    } for filename in glob.glob((data_path+tif_dir) + "**/*." + file_type, recursive=True)], key=lambda i: i['label'])
+    directory = Path(tif_dir)
+    files = directory.rglob(f"*.{extension}")
+
+    file_list = [{
+        "label": file.stem,  # filename without extension
+        "path": str(file)
+    } for file in files]
+
+    return sorted(file_list, key=lambda i: i["label"])
 
 
 def setup_sens_matrix():
     print('Setting up sensitivity matrix....')
-    habitat_list = [item['label']
-                    for item in
-                    get_tif_list('/'+config['input_coral'], 'asc') +
-                    get_tif_list('/'+config['input_fish'], 'asc')]
-    sens_mat = config['sensmat']
+    habitat_list = [item['label'] for item in
+                    get_tif_list('/'+folder_path_config.gis_config['input_coral'], 'asc') +
+                    get_tif_list('/'+folder_path_config.gis_config['input_fish'], 'asc')]
+    sens_mat = folder_path_config.gis_config['sensmat']
     for habitat_name in habitat_list:
         sens_mat.loc[habitat_name] = sens_mat.loc['VME']
     return sens_mat
 
 
 def normalize_nparray(nparray):
-    out_array = np.ma.masked_invalid(nparray)
-    logged = np.log(out_array + 1)
+    masked = np.ma.masked_invalid(nparray)
+    logged = np.log(masked + 1)
 
-
-def normalize_nparray(nparray):
-    logged = np.log(nparray + 1)
     min_val = logged.min()
     max_val = logged.max()
-    return (logged-min_val)/(max_val - min_val)
+
+    normalized = (logged - min_val) / (max_val - min_val)
+    return normalized.filled(0)  # convert masked to 0 where invalid
 
 
 def get_rasters_transform(rast, reprojection_crs):
@@ -131,42 +138,61 @@ def get_rasters_transform(rast, reprojection_crs):
         }
 
 
-def reproject_raster(file_path, output_folder, reprojection_crs="EPSG:4326"):
+def reproject_raster(input_raster, output_folder, reprojection_crs="EPSG:4326", reference_raster=None):
     """
-    Reproject an individual raster to the given crs
+    Reproject a raster to a target CRS or align it exactly to a reference raster.
 
     Args:
-        file (path): Path to the raster to reproject
-        output_folder (path): Path to the folder to where new reprojected raster will be saved
-        reprojection_crs (string, optional): string representation of crs to reproject to. Defaults to None.
+        input_raster (str): Path to the input raster.
+        output_folder (str): Folder to save the reprojected raster.
+        reprojection_crs (str): Target CRS if not aligning to a reference raster. Defaults to 'EPSG:4326'.
+        reference_raster (str, optional): Path to a reference raster to match dimensions, transform, and CRS.
 
     Returns:
-        str: path of newly reprojected raster
+        str: Path to the newly reprojected raster.
     """
-    filename = file_path.split('/')[-1].split('.')[0]
-    output_file = output_folder + filename + '.tif'
-    with rasterio.open(file_path, 'r+') as src:
-        transform, width, height = calculate_default_transform(
-            src.crs, reprojection_crs, src.width, src.height, *src.bounds
-        )
-        kwargs = src.meta.copy()
-        kwargs.update({
-            'crs': reprojection_crs,
-            'transform': transform,
-            'width': width,
-            'height': height,
-            'nodata': 0
+    filename = input_raster.split("/")[-1].split(".")[0]
+    output_path = f"{output_folder}{filename}.tif"
+
+    with rasterio.open(input_raster) as src:
+
+        if reference_raster:
+            # Match target transform and dimensions to reference raster
+            with rasterio.open(reference_raster) as ref:
+                dst_crs = ref.crs
+                dst_transform = ref.transform
+                width = ref.width
+                height = ref.height
+        else:
+            # Compute best-fit transform for target CRS
+            dst_crs = reprojection_crs
+            dst_transform, width, height = calculate_default_transform(
+                src.crs, dst_crs, src.width, src.height, *src.bounds
+            )
+
+        # Prepare metadata for output raster
+        out_meta = src.meta.copy()
+        out_meta.update({
+            "crs": dst_crs,
+            "transform": dst_transform,
+            "height": height,
+            "width": width,
+            "nodata": 0
         })
-        with rasterio.open(output_file, 'w', **kwargs) as dst:
+
+        with rasterio.open(output_path, "w", **out_meta) as dst:
             for i in range(1, src.count + 1):
-                reproject(source=rasterio.band(src, i),
-                          destination=rasterio.band(dst, i),
-                          src_transform=src.transform,
-                          src_crs=src.crs,
-                          dst_transform=transform,
-                          dst_crs=reprojection_crs,
-                          resampling=Resampling.bilinear)
-    return output_file
+                reproject(
+                    source=rasterio.band(src, i),
+                    destination=rasterio.band(dst, i),
+                    src_transform=src.transform,
+                    src_crs=src.crs,
+                    dst_transform=dst_transform,
+                    dst_crs=dst_crs,
+                    resampling=Resampling.bilinear
+                )
+
+    return output_path
 
 
 def reproject_shape(filename, save_path, reproject):
@@ -189,92 +215,109 @@ def reproject_shape(filename, save_path, reproject):
 
 
 def reproject_and_normalise_upload(raster_name, data, reprojection_crs, wgs84):
-    # reproject to wgs84 if needs be
-    raster_info = data.meta.copy()
-    if '4326' not in raster_info['crs'].to_string():
-        wgs84_rast = reproject_raster(raster_data=data,
-                                      output_folder='data/tmp/',
-                                      reprojection_crs=wgs84)
-        with rasterio.open(wgs84_rast, 'r+') as src:
-            rast_data = src
+    """
+    Reprojects and normalizes an uploaded raster to match a common template raster.
+
+    Args:
+        raster_name (str): Base name of the raster file (e.g., "input.tif")
+        data (DatasetReader): An open rasterio dataset
+        reprojection_crs (str): Target CRS for normalization (e.g., EPSG:100026)
+        wgs84 (str): CRS string for checking if reprojection to WGS84 is needed
+
+    Returns:
+        str: Path to the normalized and aligned raster
+    """
+    tmp_folder = f"data/tmp/"
+    normalized_path = f"{tmp_folder}{raster_name}"
+
+    # Step 1: Reproject to WGS84 if necessary
+    if '4326' not in data.crs.to_string():
+        data_path = reproject_raster(
+            input_path=data.name,
+            output_folder=tmp_folder,
+            reprojection_crs=wgs84
+        )
+        rast_data = rasterio.open(data_path)
     else:
         rast_data = data
 
-    normalized_name = 'data/tmp/' + raster_name
-    template_info = get_rasters_transform(rast='data/rasters/all_habitats.tif',
-                                          reprojection_crs=reprojection_crs)
+    # Step 2: Load template metadata to align with
+    template_info = get_rasters_transform(
+        rast='data/rasters/all_habitats.tif',
+        reprojection_crs=reprojection_crs
+    )
     meta = template_info['meta'].copy()
     meta.update(nodata=0)
-    # normalise
-    with rasterio.open(normalized_name, "w", **meta) as dst:
+
+    # Step 3: Normalize and reproject to match the template
+    with rasterio.open(normalized_path, "w", **meta) as dst:
         for i in range(1, rast_data.count + 1):
             band = rast_data.read(i)
-            updated_band = np.where(band < 0, 0, band)
-            source = normalize_nparray(updated_band)
-            reproject(width=template_info['width'],
-                      height=template_info['height'],
-                      source=source,
-                      src_transform=rast_data.transform,
-                      src_crs=rast_data.meta['crs'],
-                      destination=rasterio.band(dst, i),
-                      dst_transform=template_info['transform'],
-                      dst_crs=reprojection_crs,
-                      resampling=Resampling.bilinear)
+            band = np.where(band < 0, 0, band)
+            norm_band = normalize_nparray(band)
 
-    project_raster(rast1=normalized_name,
-                   template_file='data/rasters/all_habitats.tif',
-                   output_file=normalized_name.lower())
+            reproject(
+                source=norm_band,
+                destination=rasterio.band(dst, i),
+                src_transform=rast_data.transform,
+                src_crs=rast_data.crs,
+                dst_transform=template_info['transform'],
+                dst_crs=reprojection_crs,
+                resampling=Resampling.bilinear,
+                width=template_info['width'],
+                height=template_info['height']
+            )
 
-    return normalized_name.lower()
-
-
-def reproject_raster_to_all_habs(tmp_file, data, meta, out_file):
-    print('reproject_raster_to_all_habs...')
-    src_crs = meta.get('crs')
-    if src_crs is None:
-        src_crs = folder_path_config.gis_config['wgs84_str']
-    template_info = get_rasters_transform(rast='data/rasters/all_habitats.tif',
-                                          reprojection_crs=folder_path_config.gis_config['jose_crs_str'])
-
-    with rasterio.open(tmp_file, "w", **template_info['meta']) as dst:
-        reproject(width=template_info['width'],
-                  height=template_info['height'],
-                  source=data,
-                  destination=rasterio.band(dst, 1),
-                  src_transform=meta['transform'],
-                  src_crs=src_crs,
-                  dst_transform=template_info['transform'],
-                  dst_crs=folder_path_config.gis_config['jose_crs_str'],
-                  resampling=Resampling.bilinear,
-                  nodata=meta['nodata'])
-
-    project_raster(rast1=tmp_file,
-                   template_file='data/rasters/all_habitats.tif',
-                   output_file=out_file)
-    return
+    return normalized_path
 
 
-def project_raster(rast1, template_file, output_file):
-    print('GDAL project_raster...')
-    driver = gdal.GetDriverByName('GTiff')
-    input = gdal.Open(rast1, gdalconst.GA_ReadOnly)
-    reference = gdal.Open(template_file, gdalconst.GA_ReadOnly)
-    reference_proj = reference.GetProjection()
-    band_reference = reference.GetRasterBand(1)
-    output = driver.Create(output_file, reference.RasterXSize,
-                           reference.RasterYSize, 1, band_reference.DataType)
-    output.SetGeoTransform(reference.GetGeoTransform())
-    output.SetProjection(reference_proj)
-    gdal.ReprojectImage(input, output, input.GetProjection(),
-                        reference_proj, gdalconst.GRA_Bilinear)
-    print("end of GDAL function...")
+def reproject_raster_to_all_habs(tmp_path, src_data, src_meta, final_output_path):
+    """
+    Reprojects a raster to match the 'all_habitats.tif' reference raster.
+
+    Args:
+        tmp_path (str): Path to temporary output raster.
+        src_data (ndarray): Source raster data to reproject.
+        src_meta (dict): Metadata from the source raster.
+        final_output_path (str): Path to save the final reprojected raster.
+    """
+    print('📍 Reprojecting raster to align with all_habitats.tif...')
+
+    # Step 1: Determine source CRS
+    src_crs = src_meta.get('crs') or folder_path_config.gis_config['wgs84_str']
+
+    # Step 2: Load template transform and metadata
+    template_info = get_rasters_transform(
+        rast='data/rasters/all_habitats.tif',
+        reprojection_crs=folder_path_config.gis_config['jose_crs_str']
+    )
+    dst_meta = template_info['meta'].copy()
+    dst_meta.update(nodata=src_meta.get('nodata', 0))
+
+    # Step 3: Reproject into aligned raster
+    with rasterio.open(tmp_path, "w", **dst_meta) as dst:
+        reproject(
+            source=src_data,
+            destination=rasterio.band(dst, 1),
+            src_transform=src_meta['transform'],
+            src_crs=src_crs,
+            dst_transform=template_info['transform'],
+            dst_crs=folder_path_config.gis_config['jose_crs_str'],
+            resampling=Resampling.bilinear
+        )
+
+    # Step 4: Optionally reproject to template again (if you want exact match on grid)
+    reproject_raster(
+        input_path=tmp_path,
+        output_folder=final_output_path,
+        reference_raster='data/rasters/all_habitats.tif'
+    )
     return
 
 
 def psql_str():
-    return " |  psql -h " + folder_path_config.gis_config["host"] + " -p " + folder_path_config.gis_config["port"] + \
-        " -U " + folder_path_config.gis_config['user'] + \
-        " -d " + folder_path_config.gis_config['database']
+    config = folder_path_config.gis_config
+    return f" |  psql -h {config["host"]} -p {config["port"]} -U {config['user']} -d {config['database']}"
 
 
 def create_colormap(min, max):
@@ -559,56 +602,57 @@ def get_layer_cumul_imp(eco_layer, strs_layer, senstivity_val):
     return (np.multiply(eco, strs)) * senstivity_val
 
 
-def cumul_impact(ecosys_list, sens_mat, stressors_list, nodata_val):
-    print('Running cumulative impact function.....')
+def cumul_impact(ecosys_list, sens_mat, stressors_list, nodata_val=0):
+    """
+    Computes the cumulative ecological impact across ecosystem and stressor layers.
+
+    Args:
+        ecosys_list (list[dict]): Each dict contains 'label' and 'path' for ecosystem layers.
+        sens_mat (pd.DataFrame): Sensitivity matrix mapping eco-to-stressor scores.
+        stressors_list (list[dict]): Each dict contains 'label' and 'path' for stressor layers.
+        nodata_val (int or float): Value to treat as 'nodata' in rasters.
+
+    Returns:
+        tuple: (normalized_cumulative_impact_array, metadata_dict)
+    """
+    print("🔁 Running cumulative impact function...")
     cumul_impact = None
     meta = None
-    for idx, eco in enumerate(ecosys_list):
+
+    for eco in ecosys_list:
         # Check if the eco system component exists in the sensitivity matrix.
         try:
             eco_row = sens_mat.loc[eco['label']]
-        except ValueError as e:
-            continue
-        except KeyError as e:
+        except (ValueError, KeyError):
             continue
 
         with rasterio.open(eco['path'], "r+") as ecosrc:
+            eco_data = ecosrc.read(1)
             if meta is None:
                 meta = ecosrc.meta.copy()
-                meta.update(nodata=0)
-            eco_data = ecosrc.read(1)
+                meta.update(nodata=nodata_val)
 
-        for strs in stressors_list:
+        for stressor in stressors_list:
             try:
-                sens_score = eco_row.loc[strs['label']]
-            except ValueError as e:
+                sens_score = eco_row.loc[stressor['label']]
+            except (ValueError, KeyError):
                 continue
-            except KeyError as e:
+
+            if sens_score == 0 or np.isnan(sens_score):
                 continue
-            if sens_score == 0:
-                continue
-            else:
-                with rasterio.open(strs['path'], 'r+') as strsrc:
-                    strs_data = strsrc.read(1)
-                    multi = get_layer_cumul_imp(eco_data,
-                                                strs_data,
-                                                sens_score)
-                    if cumul_impact is None:
-                        cumul_impact = multi
-                    else:
-                        cumul_impact = np.add(cumul_impact, multi)
+
+            with rasterio.open(stressor['path'], 'r+') as stressorrc:
+                stressor_data = stressorrc.read(1)
+                impact = get_layer_cumul_imp(
+                    eco_data, stressor_data, sens_score)
+
+                if cumul_impact is None:
+                    cumul_impact = impact
+                else:
+                    cumul_impact = np.add(cumul_impact, impact)
+
     normalised_cumul_impact = normalize_nparray(cumul_impact)
     return [normalised_cumul_impact, meta]
-
-
-def uploadRasterToMapbox(filename, _name):
-    service = Uploader(access_token=folder_path_config.gis_config['mbat'])
-    formatted_file = change_to_8bit(filename)
-    upload_resp = service.upload(formatted_file, _name)
-    if 'id' in upload_resp.json().keys():
-        return upload_resp.json()['id']
-    else:
-        print("Failed to get an upload ID from Mapbox")
 
 
 def colorise_raster(file_name, outfile_name):
@@ -623,44 +667,6 @@ def colorise_raster(file_name, outfile_name):
             dst.write_colormap(1, colors)
             cmap = dst.colormap(1)
     return outfile_name
-
-
-def change_to_8bit(filename):
-    mapbox_projection = reproject_raster(file=filename,
-                                         output_folder='data/mapbox/',
-                                         reprojection_crs='EPSG:3857')
-    gdal_file = "data/mapbox/gdal.tif"
-    outfile = "data/mapbox/mapbox.tif"
-    subprocess.call(["gdal_translate",
-                     "-of", "GTiff",
-                     "-co", "COMPRESS=LZW",
-                     "-co", "TILED=YES",
-                     "-ot", "Byte",
-                     "-scale", mapbox_projection, gdal_file])
-    colorise_raster(gdal_file, outfile)
-    return outfile
-
-
-def dbrast_to_file(db_name, filename):
-    """
-    Create a raster file from a raster entry in the database
-
-    Args:
-        db_name (string): schema.tablename of the database table
-        filename (string): string name of the raster to get
-    """
-    with folder_path_config.gis_config['engine'].begin() as connection:
-        data = connection.execute(
-            dbraster_to_tif(db_name, filename)).fetchall()
-        rast = data[0][0].tobytes()
-        with MemoryFile(rast).open() as src:
-            meta = src.meta
-            with rasterio.open(
-                'data/rasters/'+filename,
-                'w',
-                **meta
-            ) as dst:
-                dst.write(src.read(1), 1)
 
 
 def add_raster_to_db(filename):
@@ -695,25 +701,44 @@ WGS84_SHP = reproject_shape(
 engine = db_config.engine
 
 
-def create_cost_from_impact(user, project, pu_tablename, raster, impact_type):
-    raster = rasterio.open(raster)
-    raster_data = raster.read(1)
-    raster_data = np.where(raster_data < 0, 0, raster_data)
-    raster_data = np.array([(100 + 100 * x) for x in raster_data])
+def create_cost_from_impact(user, project, pu_tablename, raster_path, impact_type):
+    """
+    Generates a Marxan-compatible .cost file by intersecting a raster with planning unit centroids.
 
-    sql = "select * from marxan.%s;" % pu_tablename
-    with engine.begin() as connection:
-        pu_layer = gpd.read_postgis(sql, connection, geom_col='geometry')
+    Args:
+        user (str): Username.
+        project (str): Project name.
+        pu_tablename (str): Table name of planning units (must include geometry).
+        raster_path (str): Path to the raster file.
+        impact_type (str): Type of impact (used to name the cost file).
+    """
+    with rasterio.open(raster_path) as raster:
+        band = raster.read(1)
+        band = np.clip(band, 0, None)  # Replace negatives with 0
+        band_scaled = 100 + 100 * band  # Apply impact-based cost formula
 
-        # get centre of hex
-        id_and_geom = [(x, y) for x, y in zip(pu_layer['puid'],
-                                              pu_layer['geometry'])]
-        row_headers = [['id', 'cost']]
-        rows = [[x[0],
-                 raster_data[raster.index(x[1].centroid.xy[0][0], x[1].centroid.xy[1][0])]] for x in id_and_geom]
-        cost_data = row_headers + sorted(rows, key=itemgetter(0))
-        folder = "/".join(['users', user, project, 'input', impact_type])
-        with open(folder+'.cost', 'w', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerows(cost_data)
-    raster.close()
+        # Load planning units from PostGIS
+        sql = f"SELECT * FROM marxan.{pu_tablename};"
+        with engine.begin() as conn:
+            pu_gdf = gpd.read_postgis(sql, conn, geom_col='geometry')
+
+        # Extract centroids and intersect with raster
+        rows = []
+        for puid, geom in zip(pu_gdf['puid'], pu_gdf['geometry']):
+            centroid = geom.centroid
+            row, col = raster.index(centroid.x, centroid.y)
+            try:
+                cost = band_scaled[row, col]
+            except IndexError:
+                cost = 0  # Outside raster bounds
+            rows.append([puid, cost])
+
+        # Create output folder and write .cost file
+        folder = os.path.join("users", user, project, "input", impact_type)
+        os.makedirs(os.path.dirname(folder), exist_ok=True)
+        output_file = folder + ".cost"
+
+        with open(output_file, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["id", "cost"])
+            writer.writerows(sorted(rows, key=itemgetter(0)))
