@@ -53,7 +53,7 @@ async def upload_input_dat(pg, project_id: int, input_dat_path: str):
                 metadata_update["costs"] = value
             elif param == "PLANNING_UNIT_NAME":
                 result = await pg.execute("""
-                    SELECT unique_id FROM marxan.metadata_planning_units
+                    SELECT unique_id FROM bioprotect.metadata_planning_units
                     WHERE feature_class_name = %s
                 """, [value], return_format="Dict")
                 if result:

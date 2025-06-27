@@ -44,7 +44,7 @@ from classes.folder_path_config import get_folder_path_config
 from classes.postgis_class import get_pg
 from colorama import Back, Fore, Style
 from functions.utils import (create_cost_from_impact, cumul_impact,
-                             get_tif_list, pad_dict, project_raster, psql_str,
+                             get_tif_list, pad_dict, reproject_raster,
                              replace_chars, reproject_and_normalise_upload,
                              reproject_raster, reproject_raster_to_all_habs,
                              reproject_shape, wgs84)
@@ -309,7 +309,7 @@ async def get_species_data(obj):
     output_df["unique_id"] = output_df.index
 
     # Fetch feature data from PostGIS
-    feature_data = await pg.execute("SELECT * FROM marxan.get_features()", return_format="DataFrame")
+    feature_data = await pg.execute("SELECT * FROM bioprotect.get_features()", return_format="DataFrame")
 
     # Join PostGIS data with species data
     output_df = output_df.join(feature_data.set_index("unique_id"), how="left")
@@ -386,15 +386,15 @@ async def process_protected_areas(obj, planning_grid_name=None, folder=None):
         # Preprocess for the given planning grid
         query = sql.SQL("""
             SELECT DISTINCT iucn_cat, grid.puid
-            FROM marxan.wdpa, marxan.{} grid
+            FROM bioprotect.wdpa, bioprotect.{} grid
             WHERE ST_Intersects(wdpa.geometry, grid.geometry)
               AND wdpaid IN (
                   SELECT wdpaid
                   FROM (
                       SELECT envelope
-                      FROM marxan.metadata_planning_units
+                      FROM bioprotect.metadata_planning_units
                       WHERE feature_class_name = %s
-                  ) AS sub, marxan.wdpa
+                  ) AS sub, bioprotect.wdpa
                   WHERE ST_Intersects(wdpa.geometry, envelope)
               )
             ORDER BY 1, 2
@@ -683,18 +683,18 @@ async def finish_feature_import(feature_class_name, name, description, source, u
 
     # create an index on the geometry column
     await pg.execute(
-        sql.SQL("CREATE INDEX {} ON marxan.{} USING GIST (geometry);")
+        sql.SQL("CREATE INDEX {} ON bioprotect.{} USING GIST (geometry);")
         .format(sql.Identifier(index_name), sql.Identifier(feature_class_name))
     )
 
     # Add a primary key to the table
     try:
         await pg.execute(
-            sql.SQL("ALTER TABLE marxan.{} DROP COLUMN IF EXISTS id, DROP COLUMN IF EXISTS ogc_fid;"
+            sql.SQL("ALTER TABLE bioprotect.{} DROP COLUMN IF EXISTS id, DROP COLUMN IF EXISTS ogc_fid;"
                     ).format(sql.Identifier(feature_class_name))
         )
         await pg.execute(
-            sql.SQL("ALTER TABLE marxan.{} ADD COLUMN id SERIAL PRIMARY KEY;")
+            sql.SQL("ALTER TABLE bioprotect.{} ADD COLUMN id SERIAL PRIMARY KEY;")
             .format(sql.Identifier(feature_class_name))
         )
     except psycopg2.errors.InvalidTableDefinition as e:
@@ -708,14 +708,14 @@ async def finish_feature_import(feature_class_name, name, description, source, u
         if geometry_type != 'ST_Point':
             # Polygon layer: Calculate total area
             query = """
-                INSERT INTO marxan.metadata_interest_features (
+                INSERT INTO bioprotect.metadata_interest_features (
                     feature_class_name, alias, description, creation_date, _area, tilesetid, extent, source, created_by
                 )
                 SELECT %s, %s, %s, now(), sub._area, %s, sub.extent, %s, %s
                 FROM (
                     SELECT ST_Area(ST_Transform(geom, 3410)) AS _area, box2d(geom) AS extent
                     FROM (
-                        SELECT ST_Union(geometry) AS geom FROM marxan.{}
+                        SELECT ST_Union(geometry) AS geom FROM bioprotect.{}
                     ) AS sub2
                 ) AS sub
                 RETURNING unique_id;
@@ -723,7 +723,7 @@ async def finish_feature_import(feature_class_name, name, description, source, u
         else:
             # Point layer: Calculate total amount
             query = """
-                INSERT INTO marxan.metadata_interest_features (
+                INSERT INTO bioprotect.metadata_interest_features (
                     feature_class_name, alias, description, creation_date, _area, tilesetid, extent, source, created_by
                 )
                 SELECT %s, %s, %s, now(), sub._area, %s, sub.extent, %s, %s
@@ -731,7 +731,7 @@ async def finish_feature_import(feature_class_name, name, description, source, u
                     SELECT amount AS _area, box2d(combined) AS extent
                     FROM (
                         SELECT SUM(value) AS amount, ST_Collect(geometry) AS combined
-                        FROM marxan.{}
+                        FROM bioprotect.{}
                     ) AS sub2
                 ) AS sub
                 RETURNING unique_id;
@@ -745,7 +745,7 @@ async def finish_feature_import(feature_class_name, name, description, source, u
         )
 
     except ServicesError as e:
-        await pg.execute(sql.SQL("DROP TABLE IF EXISTS marxan.{};").format(sql.Identifier(feature_class_name)))
+        await pg.execute(sql.SQL("DROP TABLE IF EXISTS bioprotect.{};").format(sql.Identifier(feature_class_name)))
         if "Database integrity error" in e.args[0]:
             raise ServicesError(f"The feature '{name}' already exists.") from e
         raise ServicesError(e.args[0]) from e
@@ -919,9 +919,9 @@ async def cleanup():
     """
     # Database cleanup
     database_cleanup_queries = [
-        "SELECT marxan.deletedissolvedwdpafeatureclasses()",
-        "SELECT marxan.deleteorphanedfeatures()",
-        "SELECT marxan.deletescratchfeatureclasses()"
+        "SELECT bioprotect.deletedissolvedwdpafeatureclasses()",
+        "SELECT bioprotect.deleteorphanedfeatures()",
+        "SELECT bioprotect.deletescratchfeatureclasses()"
     ]
     for query in database_cleanup_queries:
         await pg.execute(query)
@@ -1172,7 +1172,7 @@ class getCountries(BaseHandler):
 
     async def get(self):
         try:
-            content = await pg.execute("SELECT DISTINCT (t.name_iso31), t.iso3, CASE WHEN m.iso3 IS NULL THEN False ELSE True END has_marine FROM marxan.gaul_2015_simplified_1km t LEFT JOIN marxan.eez_simplified_1km m on t.iso3 = m.iso3 WHERE t.iso3 NOT LIKE '%|%' ORDER BY t.name_iso31;", return_format="Dict")
+            content = await pg.execute("SELECT DISTINCT (t.name_iso31), t.iso3, CASE WHEN m.iso3 IS NULL THEN False ELSE True END has_marine FROM bioprotect.gaul_2015_simplified_1km t LEFT JOIN bioprotect.eez_simplified_1km m on t.iso3 = m.iso3 WHERE t.iso3 NOT LIKE '%|%' ORDER BY t.name_iso31;", return_format="Dict")
             self.send_response({'records': content})
         except ServicesError as e:
             raise_error(self, e.args[0])
@@ -1244,7 +1244,7 @@ class ImportPlanningUnitGrid(BaseHandler):
                 # Insert metadata for the planning unit grid
                 await pg.execute(
                     """
-                    INSERT INTO marxan.metadata_planning_units(
+                    INSERT INTO bioprotect.metadata_planning_units(
                         feature_class_name, alias, description, creation_date, source, created_by, tilesetid
                     ) VALUES (%s, %s, %s, now(), 'Imported from shapefile', %s, %s);
                     """,
@@ -1257,7 +1257,8 @@ class ImportPlanningUnitGrid(BaseHandler):
                 # Validate and process the geometry
                 await pg.is_valid(feature_class_name)
                 await pg.execute(
-                    sql.SQL("ALTER TABLE marxan.{} ALTER COLUMN puid TYPE integer;")
+                    sql.SQL(
+                        "ALTER TABLE bioprotect.{} ALTER COLUMN puid TYPE integer;")
                     .format(sql.Identifier(feature_class_name))
                 )
 
@@ -1265,10 +1266,10 @@ class ImportPlanningUnitGrid(BaseHandler):
                 await pg.execute(
                     sql.SQL(
                         """
-                        UPDATE marxan.metadata_planning_units
+                        UPDATE bioprotect.metadata_planning_units
                         SET envelope = (
                             SELECT ST_Transform(ST_Envelope(ST_Collect(geometry)), 4326)
-                            FROM marxan.{}
+                            FROM bioprotect.{}
                         )
                         WHERE feature_class_name = %s;
                         """
@@ -1278,10 +1279,10 @@ class ImportPlanningUnitGrid(BaseHandler):
                 await pg.execute(
                     sql.SQL(
                         """
-                        UPDATE marxan.metadata_planning_units
+                        UPDATE bioprotect.metadata_planning_units
                         SET planning_unit_count = (
                             SELECT COUNT(puid)
-                            FROM marxan.{}
+                            FROM bioprotect.{}
                         )
                         WHERE feature_class_name = %s;
                         """
@@ -1345,7 +1346,7 @@ class getAllSpeciesData(BaseHandler):
                 "SELECT unique_id::integer AS id, feature_class_name, alias, description, "
                 "_area AS area, extent, to_char(creation_date, 'DD/MM/YY HH24:MI:SS') AS creation_date, "
                 "tilesetid, source, created_by "
-                "FROM marxan.metadata_interest_features "
+                "FROM bioprotect.metadata_interest_features "
                 "ORDER BY lower(alias);"
             )
 
@@ -2327,7 +2328,7 @@ class deleteGapAnalysis(BaseHandler):
             project_name = get_safe_project_name(self.get_argument("project"))
             table_name = "gap_" + \
                 self.get_argument("user") + "_" + project_name
-            await pg.execute(sql.SQL("DROP TABLE IF EXISTS marxan.{};").format(sql.Identifier(table_name.lower())))
+            await pg.execute(sql.SQL("DROP TABLE IF EXISTS bioprotect.{};").format(sql.Identifier(table_name.lower())))
             self.send_response({'info': "Gap analysis deleted"})
         except ServicesError as e:
             raise_error(self, e.args[0])
@@ -2709,7 +2710,7 @@ class importFeatures(SocketHandler):
                 else:  # get the feature names from a field in the shapefile
                     splitfield = self.get_argument('splitfield')
                     query = sql.SQL(
-                        "SELECT {splitfield} FROM marxan.{scratchTable}"
+                        "SELECT {splitfield} FROM bioprotect.{scratchTable}"
                     ).format(
                         splitfield=sql.Identifier(splitfield),
                         scratchTable=sql.Identifier(scratch_name)
@@ -2732,8 +2733,8 @@ class importFeatures(SocketHandler):
                     if is_single:
                         # No WHERE clause for single import
                         query = sql.SQL("""
-                            CREATE TABLE marxan.{feature_class_name} AS
-                            SELECT * FROM marxan.{scratch_table};
+                            CREATE TABLE bioprotect.{feature_class_name} AS
+                            SELECT * FROM bioprotect.{scratch_table};
                         """).format(
                             feature_class_name=sql.Identifier(
                                 feature_class_name),
@@ -2743,8 +2744,8 @@ class importFeatures(SocketHandler):
                     else:
                         # Filter by field value for multi-import
                         query = sql.SQL("""
-                            CREATE TABLE marxan.{feature_class_name} AS
-                            SELECT * FROM marxan.{scratch_table}
+                            CREATE TABLE bioprotect.{feature_class_name} AS
+                            SELECT * FROM bioprotect.{scratch_table}
                             WHERE {split_field} = %s;
                         """).format(
                             feature_class_name=sql.Identifier(
@@ -2787,7 +2788,7 @@ class importFeatures(SocketHandler):
             finally:
                 # delete the scratch feature class
                 if scratch_name:
-                    query = f'DROP TABLE IF EXISTS marxan."{scratch_name}"'
+                    query = f'DROP TABLE IF EXISTS bioprotect."{scratch_name}"'
                     await pg.execute(query)
 
 # imports an item from GBIF
@@ -2828,7 +2829,7 @@ class importGBIFData(SocketHandler):
         )
         engine = create_engine(db_url)
         # Import the DataFrame to the specified table
-        df.to_sql(f"marxan.{table_name}", con=engine,
+        df.to_sql(f"bioprotect.{table_name}", con=engine,
                   if_exists='replace', index=False)
 
     async def open(self):
@@ -2850,12 +2851,12 @@ class importGBIFData(SocketHandler):
                     # get the feature class name
                     feature_class_name = "gbif_" + str(taxonKey)
                     # create the table if it doesnt already exists
-                    await pg.execute(sql.SQL("DROP TABLE IF EXISTS marxan.{}").format(sql.Identifier(feature_class_name)))
-                    await pg.execute(sql.SQL("CREATE TABLE marxan.{} (eventdate date, gbifid bigint, lng double precision, lat double precision, geometry geometry)").format(sql.Identifier(feature_class_name)))
+                    await pg.execute(sql.SQL("DROP TABLE IF EXISTS bioprotect.{}").format(sql.Identifier(feature_class_name)))
+                    await pg.execute(sql.SQL("CREATE TABLE bioprotect.{} (eventdate date, gbifid bigint, lng double precision, lat double precision, geometry geometry)").format(sql.Identifier(feature_class_name)))
                     # insert the records - this calls import_df which is blocking
                     await IOLoop.current().run_in_executor(None, self.import_df, df, feature_class_name)
                     # update the geometry field
-                    await pg.execute(sql.SQL("UPDATE marxan.{} SET geometry=marxan.ST_SplitAtDateline(ST_Transform(ST_Buffer(ST_Transform(ST_SetSRID(ST_Point(lng, lat),4326),3410),%s),4326))").format(sql.Identifier(feature_class_name)), [GBIF_POINT_BUFFER_RADIUS])
+                    await pg.execute(sql.SQL("UPDATE bioprotect.{} SET geometry=bioprotect.ST_SplitAtDateline(ST_Transform(ST_Buffer(ST_Transform(ST_SetSRID(ST_Point(lng, lat),4326),3410),%s),4326))").format(sql.Identifier(feature_class_name)), [GBIF_POINT_BUFFER_RADIUS])
                     # get the gbif vernacular name
                     feature_name = self.get_argument('scientificName')
                     vernacularNames = self.getVernacularNames(taxonKey)
@@ -3194,7 +3195,7 @@ class exportProject(SocketHandler):
                     SELECT feature_class_name, alias, description, country_id, aoi_id, domain, _area,
                         ST_AsText(envelope) AS envelope, creation_date, source, created_by,
                         tilesetid, planning_unit_count
-                    FROM marxan.metadata_planning_units
+                    FROM bioprotect.metadata_planning_units
                     WHERE feature_class_name = '{pu_name}';
                 """
 
@@ -3327,7 +3328,7 @@ class ImportProject(SocketHandler):
 
             for idx, row in feature_metadata.iterrows():
                 results = await pg.execute(
-                    "SELECT * FROM marxan.metadata_interest_features WHERE feature_class_name = %s;",
+                    "SELECT * FROM bioprotect.metadata_interest_features WHERE feature_class_name = %s;",
                     data=[row['feature_class_name']],
                     return_format="Array"
                 )
@@ -3351,7 +3352,7 @@ class ImportProject(SocketHandler):
             feature_class_names = feature_metadata['feature_class_name'].tolist(
             )
             updated_features = await pg.execute(
-                "SELECT unique_id, feature_class_name FROM marxan.metadata_interest_features WHERE feature_class_name = ANY (ARRAY[%s]);",
+                "SELECT unique_id, feature_class_name FROM bioprotect.metadata_interest_features WHERE feature_class_name = ANY (ARRAY[%s]);",
                 data=[feature_class_names],
                 return_format="DataFrame"
             )
@@ -3400,7 +3401,7 @@ class ImportProject(SocketHandler):
             grid_row = planning_grid_metadata.iloc[0]
 
             existing_grid = await pg.execute(
-                "SELECT * FROM marxan.metadata_planning_units WHERE feature_class_name = %s;",
+                "SELECT * FROM bioprotect.metadata_planning_units WHERE feature_class_name = %s;",
                 data=[grid_row['feature_class_name']],
                 return_format="Array"
             )
@@ -3408,7 +3409,7 @@ class ImportProject(SocketHandler):
             if not existing_grid:
                 await pg.execute(
                     """
-                    INSERT INTO marxan.metadata_planning_units (
+                    INSERT INTO bioprotect.metadata_planning_units (
                         feature_class_name, alias, description, country_id, aoi_id, domain, _area, envelope,
                         creation_date, source, created_by, tilesetid, planning_unit_count
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, ST_SetSRID(ST_GeomFromText(%s), '4326'), NOW(),
@@ -3528,7 +3529,7 @@ class PreprocessFeature(QueryWebSocketHandler):
                         """
                         SELECT metadata.oid::integer species, grid.puid pu,
                                ST_Area(ST_Transform(ST_Union(ST_Intersection(grid.geometry, feature.geometry)), 3410)) amount
-                        FROM marxan.{grid} grid, marxan.{feature} feature, marxan.metadata_interest_features metadata
+                        FROM bioprotect.{grid} grid, bioprotect.{feature} feature, bioprotect.metadata_interest_features metadata
                         WHERE ST_Intersects(grid.geometry, feature.geometry)
                           AND metadata.feature_class_name = %s
                         GROUP BY 1, 2;
@@ -3539,7 +3540,7 @@ class PreprocessFeature(QueryWebSocketHandler):
                     query = sql.SQL(
                         """
                         SELECT metadata.oid::integer species, grid.puid pu, SUM(feature.value) amount
-                        FROM marxan.{grid} grid, marxan.{feature} feature, marxan.metadata_interest_features metadata
+                        FROM bioprotect.{grid} grid, bioprotect.{feature} feature, bioprotect.metadata_interest_features metadata
                         WHERE ST_Intersects(grid.geometry, feature.geometry)
                           AND metadata.feature_class_name = %s
                         GROUP BY 1, 2;
@@ -3717,16 +3718,16 @@ class preprocessPlanningUnits(QueryWebSocketHandler):
             if (not self.projectData["metadata"]["OLDVERSION"]):
                 # new version of marxan - get the boundary lengths
                 feature_class_name = get_unique_feature_name("tmp_")
-                await pg.execute(sql.SQL("DROP TABLE IF EXISTS marxan.{};").format(sql.Identifier(feature_class_name)))
+                await pg.execute(sql.SQL("DROP TABLE IF EXISTS bioprotect.{};").format(sql.Identifier(feature_class_name)))
                 # do the intersection
-                results = await self.executeQuery(sql.SQL("CREATE TABLE marxan.{feature_class_name} AS SELECT DISTINCT a.puid id1, b.puid id2, ST_Length(ST_CollectionExtract(ST_Intersection(ST_Transform(a.geometry, 3410), ST_Transform(b.geometry, 3410)), 2))/1000 boundary  FROM marxan.{planning_unit_name} a, marxan.{planning_unit_name} b  WHERE a.puid < b.puid AND ST_Touches(a.geometry, b.geometry);").format(feature_class_name=sql.Identifier(feature_class_name), planning_unit_name=sql.Identifier(self.projectData["metadata"]["PLANNING_UNIT_NAME"])))
+                results = await self.executeQuery(sql.SQL("CREATE TABLE bioprotect.{feature_class_name} AS SELECT DISTINCT a.puid id1, b.puid id2, ST_Length(ST_CollectionExtract(ST_Intersection(ST_Transform(a.geometry, 3410), ST_Transform(b.geometry, 3410)), 2))/1000 boundary  FROM bioprotect.{planning_unit_name} a, bioprotect.{planning_unit_name} b  WHERE a.puid < b.puid AND ST_Touches(a.geometry, b.geometry);").format(feature_class_name=sql.Identifier(feature_class_name), planning_unit_name=sql.Identifier(self.projectData["metadata"]["PLANNING_UNIT_NAME"])))
                 # delete the file if it already exists
                 if (os.path.exists(self.input_folder + "bounds.dat")):
                     os.remove(self.input_folder + "bounds.dat")
                 # write the boundary lengths to file
-                await pg.execute(sql.SQL("SELECT * FROM marxan.{};").format(sql.Identifier(feature_class_name)), return_format="File", filename=self.input_folder + "bounds.dat")
+                await pg.execute(sql.SQL("SELECT * FROM bioprotect.{};").format(sql.Identifier(feature_class_name)), return_format="File", filename=self.input_folder + "bounds.dat")
                 # delete the tmp table
-                await pg.execute(sql.SQL("DROP TABLE IF EXISTS marxan.{};").format(sql.Identifier(feature_class_name)))
+                await pg.execute(sql.SQL("DROP TABLE IF EXISTS bioprotect.{};").format(sql.Identifier(feature_class_name)))
                 # update the input.dat file
                 update_file_parameters(
                     self.project_folder + "input.dat", {'BOUNDNAME': 'bounds.dat'})
@@ -3774,15 +3775,15 @@ class createPlanningUnitGrid(QueryWebSocketHandler):
 
             # see if the planning grid already exists
             records = await pg.execute(
-                "SELECT * FROM marxan.metadata_planning_units WHERE feature_class_name =(%s);",
+                "SELECT * FROM bioprotect.metadata_planning_units WHERE feature_class_name =(%s);",
                 data=[fc],
                 return_format="Array")
             if len(records):
                 self.close({'error': "That item already exists"})
             else:
                 # estimate how many planning units are in the grid that will be created
-                table = "marxan.gaul_2015_simplified_1km" if domain.lower(
-                ) == 'terrestrial' else "marxan.eez_simplified_1km"
+                table = "bioprotect.gaul_2015_simplified_1km" if domain.lower(
+                ) == 'terrestrial' else "bioprotect.eez_simplified_1km"
 
                 # Execute the query to estimate the planning unit count
                 query = f"""
@@ -3800,7 +3801,7 @@ class createPlanningUnitGrid(QueryWebSocketHandler):
                     self.close({'error': "Number of planning units &gt; " + str(
                         project_paths.PLANNING_GRID_UNITS_LIMIT) + " (=" + str(int(unitCount)) + ")."})
                 else:
-                    results = await self.executeQuery("SELECT * FROM marxan.planning_grid(%s,%s,%s,%s,%s);", [area_km2, iso3, domain, shape, self.get_current_user()], return_format="Array")
+                    results = await self.executeQuery("SELECT * FROM bioprotect.planning_grid(%s,%s,%s,%s,%s);", [area_km2, iso3, domain, shape, self.get_current_user()], return_format="Array")
                     if results:
                         # get the planning grid alias
                         alias = results[0][0]
@@ -3851,7 +3852,7 @@ class runGapAnalysis(QueryWebSocketHandler):
             # get a safe project name to use in the name of the table that will be produced
             project_name = get_safe_project_name(self.get_argument("project"))
             # run the gap analysis
-            df = await self.executeQuery("SELECT * FROM marxan.gap_analysis(%s,%s,%s,%s)", data=[self.projectData["metadata"]["PLANNING_UNIT_NAME"], featureIds, self.get_argument("user"), project_name], return_format="DataFrame")
+            df = await self.executeQuery("SELECT * FROM bioprotect.gap_analysis(%s,%s,%s,%s)", data=[self.projectData["metadata"]["PLANNING_UNIT_NAME"], featureIds, self.get_argument("user"), project_name], return_format="DataFrame")
             # return the results
             self.close({'info': "Gap analysis complete",
                         'data': df.to_dict(orient="records")})
@@ -3906,7 +3907,7 @@ class resetDatabase(QueryWebSocketHandler):
                     # merge these ids into the featureIds array
                     featureIdsToKeep.extend(ids)
                 # delete the features that are not in use
-                df = await pg.execute("DELETE FROM marxan.metadata_interest_features WHERE NOT oid = ANY (ARRAY[%s]);", data=[featureIdsToKeep])
+                df = await pg.execute("DELETE FROM bioprotect.metadata_interest_features WHERE NOT oid = ANY (ARRAY[%s]);", data=[featureIdsToKeep])
                 self.send_response(
                     {'status': 'Preprocessing', 'info': "Deleted features"})
                 # delete the planning grids that are not in use
@@ -3923,7 +3924,7 @@ class resetDatabase(QueryWebSocketHandler):
                     # get the planning grid
                     planningGridsToKeep.append(
                         tmpObj.projectData["metadata"]['PLANNING_UNIT_NAME'])
-                df = await pg.execute("DELETE FROM marxan.metadata_planning_units WHERE NOT feature_class_name = ANY (ARRAY[%s]);", data=[planningGridsToKeep])
+                df = await pg.execute("DELETE FROM bioprotect.metadata_planning_units WHERE NOT feature_class_name = ANY (ARRAY[%s]);", data=[planningGridsToKeep])
                 self.send_response(
                     {'status': 'Preprocessing', 'info': "Deleted planning grids"})
                 # run a cleanup
@@ -4010,28 +4011,28 @@ class updateWDPA(QueryWebSocketHandler):
                             {'status': "Preprocessing", 'info': "Imported into '" + feature_class_name + "'"})
                         if not unittest:
                             # rename the existing wdpa feature class
-                            await pg.execute("ALTER TABLE marxan.wdpa RENAME TO wdpa_old;")
+                            await pg.execute("ALTER TABLE bioprotect.wdpa RENAME TO wdpa_old;")
                             self.send_response(
                                 {'status': "Preprocessing", 'info': "Renamed 'wdpa' to 'wdpa_old'"})
                             # rename the tmp feature class
-                            await pg.execute(sql.SQL("ALTER TABLE marxan.{} RENAME TO wdpa;").format(sql.Identifier(feature_class_name)))
+                            await pg.execute(sql.SQL("ALTER TABLE bioprotect.{} RENAME TO wdpa;").format(sql.Identifier(feature_class_name)))
                             self.send_response(
                                 {'status': "Preprocessing", 'info': "Renamed '" + feature_class_name + "' to 'wdpa'"})
                             # drop the columns that are not needed
-                            await pg.execute("ALTER TABLE marxan.wdpa DROP COLUMN IF EXISTS ogc_fid,DROP COLUMN IF EXISTS wdpa_pid,DROP COLUMN IF EXISTS pa_def,DROP COLUMN IF EXISTS name,DROP COLUMN IF EXISTS orig_name,DROP COLUMN IF EXISTS desig_eng,DROP COLUMN IF EXISTS desig_type,DROP COLUMN IF EXISTS int_crit,DROP COLUMN IF EXISTS marine,DROP COLUMN IF EXISTS rep_m_area,DROP COLUMN IF EXISTS gis_m_area,DROP COLUMN IF EXISTS rep_area,DROP COLUMN IF EXISTS gis_area,DROP COLUMN IF EXISTS no_take,DROP COLUMN IF EXISTS no_tk_area,DROP COLUMN IF EXISTS status_yr,DROP COLUMN IF EXISTS gov_type,DROP COLUMN IF EXISTS own_type,DROP COLUMN IF EXISTS mang_auth,DROP COLUMN IF EXISTS mang_plan,DROP COLUMN IF EXISTS verif,DROP COLUMN IF EXISTS metadataid,DROP COLUMN IF EXISTS sub_loc,DROP COLUMN IF EXISTS parent_iso;")
+                            await pg.execute("ALTER TABLE bioprotect.wdpa DROP COLUMN IF EXISTS ogc_fid,DROP COLUMN IF EXISTS wdpa_pid,DROP COLUMN IF EXISTS pa_def,DROP COLUMN IF EXISTS name,DROP COLUMN IF EXISTS orig_name,DROP COLUMN IF EXISTS desig_eng,DROP COLUMN IF EXISTS desig_type,DROP COLUMN IF EXISTS int_crit,DROP COLUMN IF EXISTS marine,DROP COLUMN IF EXISTS rep_m_area,DROP COLUMN IF EXISTS gis_m_area,DROP COLUMN IF EXISTS rep_area,DROP COLUMN IF EXISTS gis_area,DROP COLUMN IF EXISTS no_take,DROP COLUMN IF EXISTS no_tk_area,DROP COLUMN IF EXISTS status_yr,DROP COLUMN IF EXISTS gov_type,DROP COLUMN IF EXISTS own_type,DROP COLUMN IF EXISTS mang_auth,DROP COLUMN IF EXISTS mang_plan,DROP COLUMN IF EXISTS verif,DROP COLUMN IF EXISTS metadataid,DROP COLUMN IF EXISTS sub_loc,DROP COLUMN IF EXISTS parent_iso;")
                             self.send_response(
                                 {'status': "Preprocessing", 'info': "Removed unneccesary columns"})
                             # delete the old wdpa feature class
-                            await pg.execute("DROP TABLE IF EXISTS marxan.wdpa_old;")
+                            await pg.execute("DROP TABLE IF EXISTS bioprotect.wdpa_old;")
                             self.send_response(
                                 {'status': "Preprocessing", 'info': "Deleted 'wdpa_old' table"})
                             # delete all of the existing dissolved country wdpa feature classes
-                            await pg.execute("SELECT * FROM marxan.deleteDissolvedWDPAFeatureClasses()")
+                            await pg.execute("SELECT * FROM bioprotect.deleteDissolvedWDPAFeatureClasses()")
                             self.send_response(
                                 {'status': "Preprocessing", 'info': "Deleted dissolved country WDPA feature classes"})
                         else:
                             # delete the tmp feature
-                            await pg.execute(sql.SQL("DROP TABLE IF EXISTS marxan.{}").format(sql.Identifier(feature_class_name)))
+                            await pg.execute(sql.SQL("DROP TABLE IF EXISTS bioprotect.{}").format(sql.Identifier(feature_class_name)))
                             self.send_response(
                                 {'status': "Preprocessing", 'info': "Unittest has not replaced existing WDPA file"})
                     except (OSError) as e:  # TODO Add other exception classes especially PostGIS ones
@@ -4150,7 +4151,7 @@ def getPressuresActivitiesDatabase(padfile_path):
     engine = create_engine(db_url)
     print('engine: ', engine)
     try:
-        pad = pd.read_sql('select * from marxan.pad', con=engine)
+        pad = pd.read_sql('select * from bioprotect.pad', con=engine)
     except exc.ProgrammingError as err:
         print(err)
     finally:
@@ -4232,7 +4233,7 @@ async def _getAllImpacts(obj):
         None
     """
     print('getting all impacts.......')
-    obj.allImpacts = await pg.execute("SELECT feature_class_name, alias, description, extent, to_char(creation_date, 'DD/MM/YY HH24:MI:SS')::text AS creation_date, tilesetid, source, id, created_by FROM marxan.metadata_impacts ORDER BY lower(alias);", return_format="DataFrame")
+    obj.allImpacts = await pg.execute("SELECT feature_class_name, alias, description, extent, to_char(creation_date, 'DD/MM/YY HH24:MI:SS')::text AS creation_date, tilesetid, source, id, created_by FROM bioprotect.metadata_impacts ORDER BY lower(alias);", return_format="DataFrame")
 
 
 class GetAllImpactsHandler(BaseHandler):
@@ -4281,9 +4282,9 @@ class GetUploadedActivitiesHandler(BaseHandler):
         try:
             # get all the species data
             query = """
-                SELECT id, filename, activity, description, to_char(creation_date, 'DD/MM/YY HH24:MI:SS')::text 
-                AS creation_date, source, created_by 
-                FROM marxan.metadata_activities 
+                SELECT id, filename, activity, description, to_char(creation_date, 'DD/MM/YY HH24:MI:SS')::text
+                AS creation_date, source, created_by
+                FROM bioprotect.metadata_activities
                 ORDER BY lower(activity);
             """
             self.allUploadedActivities = await pg.execute(query, return_format="DataFrame")
@@ -4302,13 +4303,13 @@ class UploadRasterHandler(BaseHandler):
             validate_args(self.request.arguments, [
                 'activity', 'filename'])
             activity = self.get_argument('activity')
-            filename = self.get_argument('filename')
+            filename = self.get_argument('filename').lower()
             uploaded_rast = self.request.files['value'][0].body
 
             pad_data = await pg.execute(
                 """
-                SELECT activitytitle, pressuretitle, rppscore 
-                FROM marxan.pad 
+                SELECT activitytitle, pressuretitle, rppscore
+                FROM bioprotect.pad
                 WHERE activitytitle = %s
                 """,
                 data=[activity],
@@ -4352,6 +4353,9 @@ class UploadRasterHandler(BaseHandler):
 
 
 class SaveRasterHandler(SocketHandler):
+    async def initialize(self):
+        return await super().initialize()
+
     async def open(self):
         try:
             await super().open({'info': "Uploading raster to..."})
@@ -4359,22 +4363,37 @@ class SaveRasterHandler(SocketHandler):
             print('ServicesError as e: ', e)
             pass
         else:
-            print('saveRasterHandler...')
+            log("Saving Raster..... ", Fore.YELLOW)
             validate_args(self.request.arguments,
                           ['activity', 'filename', 'description'])
             activity = self.get_argument('activity')
-            filename = self.get_argument('filename')
+            filename = self.get_argument('filename').lower()
             description = self.get_argument('description')
-            raster_loc = 'data/tmp/' + filename.lower()
+            raster_loc = 'data/tmp/' + filename
             activity_name = get_unique_feature_name("activity_")
-            connection = psql_str()
+            connection = db_config.psql_str()
+            log(f"ACTIVITY:{activity} - FILENAME:{filename} ======= RasterLocation: {raster_loc} - connection: {connection}")
+
             try:
-                cmds = [
-                    "raster2pgsql", "-s", "100026", "-d", "-I", "-C", "-F",
-                    raster_loc, f"marxan.{activity_name}", connection
-                ]
+                assert os.path.isfile(
+                    raster_loc), f"Raster file not found: {raster_loc}"
                 # check=True ensures an error is raised if the command fails
-                subprocess.run(cmds, check=True)
+                # subprocess.run([
+                #     "raster2pgsql", "-s", "100026", "-d", "-I", "-C", "-F",
+                #     raster_loc, f"bioprotect.{activity_name}", connection], check=True)
+
+                raster2pgsql_cmd = [
+                    "raster2pgsql", "-s", "100026", "-d", "-I", "-C", "-F",
+                    raster_loc, f"bioprotect.{activity_name}"
+                ]
+
+                psql_cmd = ["psql", db_config.build_connection_string()]
+
+                # Pipe raster2pgsql into psql
+                raster_proc = subprocess.Popen(
+                    raster2pgsql_cmd, stdout=subprocess.PIPE)
+                subprocess.run(psql_cmd, stdin=raster_proc.stdout, check=True)
+                raster_proc.stdout.close()
 
             except TypeError as e:
                 print('e: ', e)
@@ -4385,29 +4404,29 @@ class SaveRasterHandler(SocketHandler):
             data_array = None
             try:
                 query = sql.SQL("""
-                    INSERT INTO marxan.metadata_activities 
+                    INSERT INTO bioprotect.metadata_activities 
                     (creation_date, description, source, created_by, filename, activity, activity_name, extent)
                     SELECT
                         now(), %s, %s, %s, %s, %s, %s, rast.extent 
                     FROM
                         (SELECT Box2D(ST_Envelope(rast)) extent
                     FROM 
-                        (SELECT rid, rast FROM marxan.{}) as rast2 ) as rast
-                    RETURNING id""").format(sql.Identifier(activity_name)),
+                        (SELECT rid, rast FROM bioprotect.{}) as rast2 ) as rast
+                    RETURNING id""").format(sql.Identifier(activity_name))
 
                 data_array = await pg.execute(query, data=[
                     description, "raster", "cartig", filename.lower(), activity, activity_name
                 ], return_format="Array")
                 print('data_array: ', data_array)
 
-                self.close({
+                self.close(close_message={
                     'info': "Raster uploaded and saved to database",
                     'data_array': data_array
                 })
 
             except (ServicesError) as e:
                 print('e: ', e)
-                self.close({
+                await self.close(close_message={
                     'error': e.args[0],
                     'info': 'Error uploading to database....'
                 })
@@ -4448,7 +4467,7 @@ async def _finishImportingImpact(feature_class_name, activity, description, user
         print("creating record for feature in db")
         id = await pg.execute(
             sql.SQL("""
-            INSERT INTO marxan.metadata_impacts (feature_class_name, alias, description, creation_date, tilesetid, extent, source, created_by) SELECT %s, %s, %s, now(), %s, rast.extent, %s, %s FROM (SELECT Box2D(ST_Envelope(rast)) extent FROM ( SELECT rid, rast FROM marxan.{}) as rast2 ) as rast RETURNING tableoid""")
+            INSERT INTO bioprotect.metadata_impacts (feature_class_name, alias, description, creation_date, tilesetid, extent, source, created_by) SELECT %s, %s, %s, now(), %s, rast.extent, %s, %s FROM (SELECT Box2D(ST_Envelope(rast)) extent FROM ( SELECT rid, rast FROM bioprotect.{}) as rast2 ) as rast RETURNING tableoid""")
             .format(sql.Identifier(feature_class_name)),
             data=[feature_class_name, activity, description,
                   tilesetId, "raster", "cartig"],
@@ -4476,12 +4495,12 @@ class CumulativeImpactHandler(SocketHandler):
             validate_args(self.request.arguments, ['selectedIds'])
             activityIds = self.get_argument('selectedIds')
             print('activityIds: ', activityIds)
-            sql = "select activity, description from marxan.metadata_activities where id = %s ;" % activityIds
+            sql = "select activity, description from bioprotect.metadata_activities where id = %s ;" % activityIds
             records = await pg.execute(sql, return_format="Array")
             records = records[0]
             activity = records[0]
             description = records[1]
-            connect_str = psql_str()
+            connect_str = db_config.psql_str()
             feature_class_name = get_unique_feature_name("impact_")
             self.send_response(
                 {'Preprocessing': "Building sensitivity matrix..."})
@@ -4517,9 +4536,8 @@ class CumulativeImpactHandler(SocketHandler):
                     {'info': 'Saving cumulative impact raster to database...'})
                 cmds = [
                     "raster2pgsql", "-s", "4326", "-c", "-I", "-C", "-F",
-                    wgs84_rast, f"marxan.{feature_class_name}", connect_str
+                    wgs84_rast, f"bioprotect.{feature_class_name}", connect_str
                 ]
-
                 subprocess.run(cmds, check=True)
             except TypeError as e:
                 self.send_response(
@@ -4535,14 +4553,14 @@ class CumulativeImpactHandler(SocketHandler):
                                                       ' ', '_').lower(),
                                                   description,
                                                   self.get_current_user())
-                self.close({
+                self.close(close_message={
                     'info': "Cumulative Impact run and raster uploaded to mapbox",
                     # 'uploadId': uploadId
                 })
 
             except (ServicesError) as e:
                 print('e: ', e)
-                self.close({
+                self.close(close_message={
                     'error': e.args[0],
                     'info': 'Failed to run CI function....'
                 })
@@ -4562,7 +4580,7 @@ class CreateCostsFromImpactHandler(SocketHandler):
             validate_args(self.request.arguments,
                           ['user', 'project', 'pu_filename',
                            'impact_filename', 'impact_type'])
-            sql = "select filename from marxan.%s;" % self.get_argument(
+            sql = "select filename from bioprotect.%s;" % self.get_argument(
                 'impact_filename')
             records = await pg.execute(sql, return_format="Array")
             impact_filename = records[0][0]
@@ -4639,7 +4657,7 @@ class createMarinePlanningUnitGridHandler(QueryWebSocketHandler):
             shape = self.get_argument('shape')
             fc = "pu_" + gridname + "_marine_" + shape.lower() + "_" + areakm2
             records = await pg.execute(
-                "SELECT * FROM marxan.metadata_planning_units WHERE feature_class_name =(%s);",
+                "SELECT * FROM bioprotect.metadata_planning_units WHERE feature_class_name =(%s);",
                 data=[fc],
                 return_format="Array")
             if len(records):

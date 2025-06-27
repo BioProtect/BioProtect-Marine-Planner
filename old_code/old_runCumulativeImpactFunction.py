@@ -32,7 +32,7 @@ class CumulativeImpactHandler(MarxanWebSocketHandler):
             reproject_raster_to_all_habs(tmp_file='./data/tmp/impact2.tif',
                                          data=impact,
                                          meta=meta,
-                                         out_file='./data/tmp/marxan.tif')
+                                         out_file='./data/tmp/bioprotect.tif')
             impact_file = 'data/uploaded_rasters/impact.tif'
             cropped_impact = 'data/uploaded_rasters/'+feature_class_name+'.tif'
             project_raster(rast1='data/tmp/impact.tif',
@@ -47,7 +47,7 @@ class CumulativeImpactHandler(MarxanWebSocketHandler):
                 self.send_response(
                     {'info': 'Saving cumulative impact raster to database...'})
                 cmds = "raster2pgsql -s 4326 -c -I -C -F " + wgs84_rast + \
-                    " marxan." + feature_class_name + connect_str
+                    " bioprotect." + feature_class_name + connect_str
                 subprocess.call(cmds, shell=True)
             except TypeError as e:
                 self.send_response(

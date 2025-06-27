@@ -79,7 +79,7 @@ class FeatureHandler(BaseHandler):
             SELECT unique_id::integer AS id, feature_class_name, alias, description,
             _area AS area, extent, to_char(creation_date, 'DD/MM/YY HH24:MI:SS') AS creation_date,
             tilesetid, source, created_by
-            FROM marxan.metadata_interest_features
+            FROM bioprotect.metadata_interest_features
             WHERE unique_id = %s;
             """
         )
@@ -94,7 +94,7 @@ class FeatureHandler(BaseHandler):
 
         feature_data = await self.pg.execute(
             """
-            SELECT unique_id, created_by FROM marxan.metadata_interest_features WHERE feature_class_name = %s;
+            SELECT unique_id, created_by FROM bioprotect.metadata_interest_features WHERE feature_class_name = %s;
             """,
             data=[feature_class_name],
             return_format="Dict"
@@ -113,8 +113,8 @@ class FeatureHandler(BaseHandler):
             raise ServicesError(
                 "The feature cannot be deleted as it is used in one or more projects.")
 
-        await self.pg.execute(sql.SQL("DROP TABLE IF EXISTS marxan.{};").format(sql.Identifier(feature_class_name)))
-        await self.pg.execute("DELETE FROM marxan.metadata_interest_features WHERE feature_class_name = %s;", [feature_class_name])
+        await self.pg.execute(sql.SQL("DROP TABLE IF EXISTS bioprotect.{};").format(sql.Identifier(feature_class_name)))
+        await self.pg.execute("DELETE FROM bioprotect.metadata_interest_features WHERE feature_class_name = %s;", [feature_class_name])
 
         try:
             response = requests.delete(
@@ -158,8 +158,8 @@ class FeatureHandler(BaseHandler):
 
         create_table_query = sql.SQL(
             """
-            CREATE TABLE marxan.{} AS
-            SELECT marxan.ST_SplitAtDateLine(ST_SetSRID(ST_MakePolygon(%s)::geometry, 4326)) AS geometry;
+            CREATE TABLE bioprotect.{} AS
+            SELECT bioprotect.ST_SplitAtDateLine(ST_SetSRID(ST_MakePolygon(%s)::geometry, 4326)) AS geometry;
             """
         ).format(sql.Identifier(feature_class_name))
 

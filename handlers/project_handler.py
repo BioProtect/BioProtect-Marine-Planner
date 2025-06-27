@@ -108,7 +108,7 @@ class ProjectHandler(BaseHandler):
         projects = await self.pg.execute("""
             SELECT p.*, pu.alias AS planning_unit_alias
             FROM public.projects p
-            LEFT JOIN marxan.metadata_planning_units pu
+            LEFT JOIN bioprotect.metadata_planning_units pu
                 ON p.planning_unit_id = pu.unique_id
             WHERE p.user_id = %s
             ORDER BY LOWER(p.name)
@@ -152,7 +152,7 @@ class ProjectHandler(BaseHandler):
                   f.source,
                   f.created_by
                 FROM public.project_feature pf
-                JOIN marxan.metadata_interest_features f
+                JOIN bioprotect.metadata_interest_features f
                   ON f.unique_id = pf.feature_unique_id
                 WHERE pf.project_id = %s
                 ORDER BY f.alias
@@ -163,15 +163,15 @@ class ProjectHandler(BaseHandler):
             if project.get("planning_unit_id"):
                 df = await self.pg.execute("""
                     SELECT mp.alias, mp.description, mp.domain, mp._area AS area, mp.creation_date, mp.created_by, g.original_n AS country
-                    FROM marxan.metadata_planning_units mp
-                    LEFT OUTER JOIN marxan.gaul_2015_simplified_1km g ON g.id_country = mp.country_id
+                    FROM bioprotect.metadata_planning_units mp
+                    LEFT OUTER JOIN bioprotect.gaul_2015_simplified_1km g ON g.id_country = mp.country_id
                     WHERE mp.unique_id = %s
                 """, [project["planning_unit_id"]], return_format="DataFrame")
 
                 # df = await self.pg.execute("""
                 #     SELECT alias, description, domain, _area AS area, creation_date,
                 #         created_by, original_n AS country
-                #     FROM marxan.metadata_planning_units
+                #     FROM bioprotect.metadata_planning_units
                 #     WHERE unique_id = %s
                 # """, [project["planning_unit_id"]], return_format="DataFrame")
 
@@ -243,7 +243,7 @@ class ProjectHandler(BaseHandler):
     #     if project_row.get("planning_unit_id"):
     #         df = await pg.execute("""
     #             SELECT alias, description, domain, _area AS area, creation_date, created_by, original_n AS country
-    #             FROM marxan.metadata_planning_units
+    #             FROM bioprotect.metadata_planning_units
     #             WHERE unique_id = %s
     #         """, [project_row["planning_unit_id"]], return_format="DataFrame")
 
@@ -405,7 +405,7 @@ class ProjectHandler(BaseHandler):
         query = sql.SQL(
             """
             SELECT puid AS id, 1::double precision AS cost, 0::integer AS status
-            FROM marxan.{}
+            FROM bioprotect.{}
             """
         ).format(sql.Identifier(planning_grid_name))
 
@@ -568,7 +568,7 @@ class ProjectHandler(BaseHandler):
 
                 if key == 'PLANNING_UNIT_NAME':
                     df = await self.pg.execute(
-                        "SELECT * FROM marxan.get_planning_units_metadata(%s)",
+                        "SELECT * FROM bioprotect.get_planning_units_metadata(%s)",
                         data=[key_value[1]], return_format="DataFrame")
 
                     if df.empty:

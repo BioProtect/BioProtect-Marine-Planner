@@ -24,7 +24,7 @@ async def get_feature_data(pg, oid):
         tilesetid,
         source,
         created_by
-    FROM marxan.metadata_interest_features
+    FROM bioprotect.metadata_interest_features
     WHERE oid = %s;
     """
     # Execute the query and return the results as a DataFrame

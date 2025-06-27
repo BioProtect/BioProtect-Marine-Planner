@@ -96,7 +96,7 @@ class PostGIS:
                         f"Database query failed: {str(e)}") from e
 
     async def drop_existing_table(self, feature_class_name):
-        await self.execute(f"DROP TABLE IF EXISTS marxan.{feature_class_name};")
+        await self.execute(f"DROP TABLE IF EXISTS bioprotect.{feature_class_name};")
 
     def build_ogr2ogr_command(self, folder, filename, feature_class_name, s_epsg_code, t_epsg_code, source_feature_class=''):
         return (
@@ -157,7 +157,7 @@ class PostGIS:
             raise ServicesError(f"Import failed with return code {result}")
 
         if split_at_dateline:
-            query = f'UPDATE marxan.{feature_class_name} SET geometry = marxan.ST_SplitAtDateLine(geometry);'
+            query = f'UPDATE bioprotect.{feature_class_name} SET geometry = bioprotect.ST_SplitAtDateLine(geometry);'
             await self.execute(query)
 
     async def import_shapefile(self, folder, shapefile, feature_class_name, s_epsg_code="EPSG:4326", t_epsg_code="EPSG:4326", splitAtDateline=True):
@@ -171,7 +171,7 @@ class PostGIS:
         await self.import_file(folder, fileGDB, destFeatureClass, s_epsg_code, t_epsg_code, splitAtDateline, sourceFeatureClass)
 
     async def is_valid(self, feature_class_name):
-        query = f"SELECT DISTINCT ST_IsValid(geometry) FROM marxan.{feature_class_name} LIMIT 1;"
+        query = f"SELECT DISTINCT ST_IsValid(geometry) FROM bioprotect.{feature_class_name} LIMIT 1;"
         result = await self.execute(query, return_format="Array")
         if not result[0]['st_isvalid']:
             await self.drop_existing_table(feature_class_name)
@@ -179,11 +179,11 @@ class PostGIS:
 
     async def create_primary_key(self, feature_class_name, column):
         key_name = f"idx_{uuid.uuid4().hex}"
-        await self.execute(f"ALTER TABLE marxan.{feature_class_name} ADD CONSTRAINT {key_name} PRIMARY KEY ({column});")
+        await self.execute(f"ALTER TABLE bioprotect.{feature_class_name} ADD CONSTRAINT {key_name} PRIMARY KEY ({column});")
 
     async def get_geometry_type(self, feature_class_name):
         result = await self.execute(
-            f"SELECT ST_GeometryType(geometry) FROM marxan.{feature_class_name} LIMIT 1;",
+            f"SELECT ST_GeometryType(geometry) FROM bioprotect.{feature_class_name} LIMIT 1;",
             return_format="Array")
         return result[0]['st_geometrytype']
 

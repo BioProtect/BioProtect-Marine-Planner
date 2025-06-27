@@ -210,7 +210,7 @@ async def get_project_data(pg, obj):
 
             # If PLANNING_UNIT_NAME, fetch related metadata
             if key == 'PLANNING_UNIT_NAME':
-                df = await pg.execute("SELECT * FROM marxan.get_planning_units_metadata(%s)",
+                df = await pg.execute("SELECT * FROM bioprotect.get_planning_units_metadata(%s)",
                                       data=[key_value[1]],
                                       return_format="DataFrame")
                 default_metadata = {

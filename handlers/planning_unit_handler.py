@@ -102,7 +102,7 @@ class PlanningUnitHandler(BaseHandler):
         grid_data = await self.pg.execute(
             """
             SELECT created_by, source
-            FROM marxan.metadata_planning_units
+            FROM bioprotect.metadata_planning_units
             WHERE feature_class_name = %s;
             """,
             data=[planning_grid],
@@ -127,12 +127,12 @@ class PlanningUnitHandler(BaseHandler):
             del_tileset(planning_grid)
 
         await self.pg.execute(
-            "DELETE FROM marxan.metadata_planning_units WHERE feature_class_name = %s;",
+            "DELETE FROM bioprotect.metadata_planning_units WHERE feature_class_name = %s;",
             data=[planning_grid]
         )
 
         await self.pg.execute(
-            sql.SQL("DROP TABLE IF EXISTS marxan.{};").format(
+            sql.SQL("DROP TABLE IF EXISTS bioprotect.{};").format(
                 sql.Identifier(planning_grid))
         )
 
@@ -260,7 +260,7 @@ class PlanningUnitHandler(BaseHandler):
 
             await self.pg.execute(
                 """
-                INSERT INTO marxan.metadata_planning_units(
+                INSERT INTO bioprotect.metadata_planning_units(
                     feature_class_name, alias, description, creation_date, source, created_by, tilesetid
                 ) VALUES (%s, %s, %s, now(), 'Imported from shapefile', %s, %s);
                 """,
@@ -271,17 +271,17 @@ class PlanningUnitHandler(BaseHandler):
             await self.pg.is_valid(feature_class_name)
 
             await self.pg.execute(
-                sql.SQL("ALTER TABLE marxan.{} ALTER COLUMN puid TYPE integer;").format(
+                sql.SQL("ALTER TABLE bioprotect.{} ALTER COLUMN puid TYPE integer;").format(
                     sql.Identifier(feature_class_name))
             )
 
             await self.pg.execute(
                 sql.SQL(
                     """
-                    UPDATE marxan.metadata_planning_units
+                    UPDATE bioprotect.metadata_planning_units
                     SET envelope = (
                         SELECT ST_Transform(ST_Envelope(ST_Collect(geometry)), 4326)
-                        FROM marxan.{}
+                        FROM bioprotect.{}
                     )
                     WHERE feature_class_name = %s;
                     """
@@ -292,10 +292,10 @@ class PlanningUnitHandler(BaseHandler):
             await self.pg.execute(
                 sql.SQL(
                     """
-                    UPDATE marxan.metadata_planning_units
+                    UPDATE bioprotect.metadata_planning_units
                     SET planning_unit_count = (
                         SELECT COUNT(puid)
-                        FROM marxan.{}
+                        FROM bioprotect.{}
                     )
                     WHERE feature_class_name = %s;
                     """

@@ -27,7 +27,7 @@ cur = conn.cursor()
 def get_activity_rasters(activityIds):
     print('activityIds: ', activityIds)
     data = []
-    query = "SELECT activity, activity_name, extent FROM marxan.metadata_activities WHERE id = ANY(%s)"
+    query = "SELECT activity, activity_name, extent FROM bioprotect.metadata_activities WHERE id = ANY(%s)"
     cur.execute(query, (activityIds,))
     result = cur.fetchall()
     print('result: ', result)
@@ -42,27 +42,27 @@ def get_activity_rasters(activityIds):
     # for id in activityIds:
     #     pg.execute(
     #         sql.SQL(
-    #             "CREATE TABLE marxan.{} AS SELECT marxan.ST_SplitAtDateLine(ST_SetSRID(ST_MakePolygon(%s)::geometry, 4326)) AS geometry;"
+    #             "CREATE TABLE bioprotect.{} AS SELECT bioprotect.ST_SplitAtDateLine(ST_SetSRID(ST_MakePolygon(%s)::geometry, 4326)) AS geometry;"
     #         ).format(
     #             sql.Identifier(feature_class_name)
     #         ),
     #         [self.get_argument('linestring')]
     #     )
     """
-        SELECT activity, activity_name, extent, rast(SELECT rast FROM marxan.activity_name) AS rast FROM marxan.metadata_activities WHERE id IN (activityIds)
+        SELECT activity, activity_name, extent, rast(SELECT rast FROM bioprotect.activity_name) AS rast FROM bioprotect.metadata_activities WHERE id IN (activityIds)
     """
     return
 
 
 def get_raster(activity_name):
     raster = cur.execute(
-        SQL("SELECT rast from marxan.{}").format(Identifier(activity_name)))
+        SQL("SELECT rast from bioprotect.{}").format(Identifier(activity_name)))
     return cur.fetchone()
 
 
 def get_pad(activity):
     pad_data = cur.execute(
-        "select activitytitle, pressuretitle, rppscore from marxan.pad WHERE pad.activitytitle = %s;", (activity,))
+        "select activitytitle, pressuretitle, rppscore from bioprotect.pad WHERE pad.activitytitle = %s;", (activity,))
     return cur.fetchall()
 
 
@@ -75,13 +75,13 @@ def create_pressures(activity_dict, rast):
         score = int(pressure[2])
         if score > 0:
             cur.execute(
-                "select exists(select 1 from marxan.temp_pressures where pressure=%s)", [pressure[1]])
+                "select exists(select 1 from bioprotect.temp_pressures where pressure=%s)", [pressure[1]])
             if cur.fetchall():
                 print('exists')
             else:
                 print('doesnt exist')
             cur.execute(SQL(
-                "INSERT INTO marxan.temp_pressures (pressure, rast, activity) VALUES (%s, public.ST_MapAlgebra(%s, 1, NULL, '[rast] * %s'), %s)"
+                "INSERT INTO bioprotect.temp_pressures (pressure, rast, activity) VALUES (%s, public.ST_MapAlgebra(%s, 1, NULL, '[rast] * %s'), %s)"
             ).format(Identifier(activity_dict['activity_name'])),
                 [pressure[1], rast, score, format_act])
             conn.commit()
@@ -113,7 +113,7 @@ def shape_to_hex():
 
 
 def postgis_to_shape(table_name, filename):
-    sql = "select * from marxan.%s;" % table_name
+    sql = "select * from bioprotect.%s;" % table_name
     df = gpd.read_postgis(sql, conn, geom_col='geometry')
     print('df: ', df)
     df.to_file(filename)

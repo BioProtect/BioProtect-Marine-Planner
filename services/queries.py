@@ -14,8 +14,8 @@ get_pu_grids_query = """
             created_by,
             tilesetid,
             planning_unit_count
-        FROM marxan.metadata_planning_units pu
-        LEFT OUTER JOIN marxan.gaul_2015_simplified_1km
+        FROM bioprotect.metadata_planning_units pu
+        LEFT OUTER JOIN bioprotect.gaul_2015_simplified_1km
         ON id_country = country_id
         ORDER BY alias;
     """

@@ -315,11 +315,6 @@ def reproject_raster_to_all_habs(tmp_path, src_data, src_meta, final_output_path
     return
 
 
-def psql_str():
-    config = folder_path_config.gis_config
-    return f" |  psql -h {config["host"]} -p {config["port"]} -U {config['user']} -d {config['database']}"
-
-
 def create_colormap(min, max):
     colormap = [(124, 202, 247, 255),
                 (122, 201, 247, 255),
@@ -669,27 +664,6 @@ def colorise_raster(file_name, outfile_name):
     return outfile_name
 
 
-def add_raster_to_db(filename):
-    """
-    Add a single raster to a Postgis table.
-
-    Args:
-        filename (str:path): path of the raster to add
-
-    Returns:
-        boolean: Whether the command to add to the database was succesful or not
-    """
-    try:
-        cmds = "raster2pgsql -s 100026 -d -I -C -F  impact." + filename + \
-            "|  psql -h " + db_config.DATABASE_HOST + " -p " + db_config.PORT + \
-            " -U " + db_config.DATABASE_USER + " -d " + db_config.DATABASE_NAME
-        subprocess.call(cmds, shell=True)
-        return True
-    except TypeError as e:
-        print("Pass in the location of the file as a string, not anything else....")
-        return False
-
-
 wgs84 = CRS.from_proj4(folder_path_config.gis_config.get("wgs84_str"))
 JOSE_CRS = CRS.from_proj4(folder_path_config.gis_config.get("jose_crs_str"))
 WGS84_SHP = reproject_shape(
@@ -718,7 +692,7 @@ def create_cost_from_impact(user, project, pu_tablename, raster_path, impact_typ
         band_scaled = 100 + 100 * band  # Apply impact-based cost formula
 
         # Load planning units from PostGIS
-        sql = f"SELECT * FROM marxan.{pu_tablename};"
+        sql = f"SELECT * FROM bioprotect.{pu_tablename};"
         with engine.begin() as conn:
             pu_gdf = gpd.read_postgis(sql, conn, geom_col='geometry')
 

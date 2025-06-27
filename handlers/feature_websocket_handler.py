@@ -109,7 +109,7 @@ class FeatureHandler(SocketHandler):
 
         query = sql.SQL("""
             SELECT DISTINCT {split_field}
-            FROM marxan.{scratch_table}
+            FROM bioprotect.{scratch_table}
         """).format(
             split_field=sql.Identifier(split_field),
             scratch_table=sql.Identifier(scratch_name)
@@ -120,8 +120,8 @@ class FeatureHandler(SocketHandler):
 
     async def create_feature_class_from_shapefile(self, scratch_name, feature_class_name, feature_name, single_name):
         query = """
-            CREATE TABLE marxan.{feature_class_name} AS 
-            SELECT * FROM marxan.{scratch_table} {condition};
+            CREATE TABLE bioprotect.{feature_class_name} AS 
+            SELECT * FROM bioprotect.{scratch_table} {condition};
         """
         if single_name:
             condition = ""
@@ -182,7 +182,7 @@ class FeatureHandler(SocketHandler):
                 {'error': error.args[0], 'info': 'Failed to import features'})
 
     async def cleanup_scratch(self, scratch_name):
-        await self.pg.execute(sql.SQL("DROP TABLE IF EXISTS marxan.{};").format(sql.Identifier(scratch_name)))
+        await self.pg.execute(sql.SQL("DROP TABLE IF EXISTS bioprotect.{};").format(sql.Identifier(scratch_name)))
 
     def cleanup_gml_files(self, feature_class_name):
         for ext in [".gml", ".gfs"]:

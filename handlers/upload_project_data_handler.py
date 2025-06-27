@@ -63,7 +63,7 @@ class UploadInputDatHandler(BaseHandler):
                     if param == "PLANNING_UNIT_NAME":
                         # Get planning unit id and update project
                         result = await self.pg.execute("""
-                            SELECT unique_id FROM marxan.metadata_planning_units
+                            SELECT unique_id FROM bioprotect.metadata_planning_units
                             WHERE feature_class_name = %s
                         """, [value], return_format="Dict")
                         if result:

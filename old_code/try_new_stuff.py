@@ -93,7 +93,7 @@ cur = conn.cursor()
 def shape_to_hex():
     data = cur.execute(
         """
-            SELECT marxan.hex_grid(
+            SELECT bioprotect.hex_grid(
                 case_study.area,case_study.xmin,case_study.ymin,case_study.xmax,case_study.ymax FROM
                 (SELECT (area, ST_XMin(geom), ST_YMin(geom), ST_XMax(geom), ST_YMax(geom)) AS case_study from impact.case_studies WHERE gid=12))             
         """
