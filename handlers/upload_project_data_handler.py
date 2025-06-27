@@ -38,25 +38,25 @@ class UploadInputDatHandler(BaseHandler):
 
                 if key in input_file_params:
                     await self.pg.execute(
-                        "INSERT INTO public.project_files (project_id, file_type, file_name) VALUES (%s, %s, %s)",
+                        "INSERT INTO bioprotect.project_files (project_id, file_type, file_name) VALUES (%s, %s, %s)",
                         [project_id, param, value]
                     )
 
                 elif key in run_params:
                     await self.pg.execute(
-                        "INSERT INTO public.project_run_parameters (project_id, key, value) VALUES (%s, %s, %s)",
+                        "INSERT INTO bioprotect.project_run_parameters (project_id, key, value) VALUES (%s, %s, %s)",
                         [project_id, param, str(value)]
                     )
 
                 elif key in renderer_params:
                     await self.pg.execute(
-                        "INSERT INTO public.project_renderer (project_id, key, value) VALUES (%s, %s, %s)",
+                        "INSERT INTO bioprotect.project_renderer (project_id, key, value) VALUES (%s, %s, %s)",
                         [project_id, param, str(value)]
                     )
 
                 elif key in metadata_params:
                     await self.pg.execute(
-                        "INSERT INTO public.project_metadata (project_id, key, value) VALUES (%s, %s, %s)",
+                        "INSERT INTO bioprotect.project_metadata (project_id, key, value) VALUES (%s, %s, %s)",
                         [project_id, param, str(value)]
                     )
 
@@ -69,7 +69,7 @@ class UploadInputDatHandler(BaseHandler):
                         if result:
                             planning_unit_id = result[0]["unique_id"]
                             await self.pg.execute(
-                                "UPDATE public.projects SET planning_unit_id = %s WHERE id = %s",
+                                "UPDATE bioprotect.projects SET planning_unit_id = %s WHERE id = %s",
                                 [planning_unit_id, project_id]
                             )
 

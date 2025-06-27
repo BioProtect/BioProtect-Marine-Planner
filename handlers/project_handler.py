@@ -51,7 +51,7 @@ class ProjectHandler(BaseHandler):
     async def get_project_by_id(self, project_id):
         """Fetch project details based on project ID."""
         query = """
-            SELECT * FROM projects WHERE id = %s;
+            SELECT * FROM bioprotect.projects WHERE id = %s;
         """
         result = await self.pg.execute(query, [project_id], return_format="Dict")
         # ✅ Returns first result or None if not found
@@ -107,7 +107,7 @@ class ProjectHandler(BaseHandler):
         print('user_id: ', user_id)
         projects = await self.pg.execute("""
             SELECT p.*, pu.alias AS planning_unit_alias
-            FROM public.projects p
+            FROM bioprotect.projects p
             LEFT JOIN bioprotect.metadata_planning_units pu
                 ON p.planning_unit_id = pu.unique_id
             WHERE p.user_id = %s
@@ -123,18 +123,18 @@ class ProjectHandler(BaseHandler):
 
             # Fetch run parameters
             run_params = await self.pg.execute("""
-                SELECT key, value FROM public.project_run_parameters WHERE project_id = %s
+                SELECT key, value FROM bioprotect.project_run_parameters WHERE project_id = %s
             """, [project_id], return_format="Dict")
 
             # Fetch input files
             files = await self.pg.execute("""
-                SELECT file_type, file_name FROM public.project_files WHERE project_id = %s
+                SELECT file_type, file_name FROM bioprotect.project_files WHERE project_id = %s
             """, [project_id], return_format="Dict")
             files_dict = {f["file_type"]: f["file_name"] for f in files}
 
             # Fetch renderer config
             renderer = await self.pg.execute("""
-                SELECT key, value FROM public.project_renderer WHERE project_id = %s
+                SELECT key, value FROM bioprotect.project_renderer WHERE project_id = %s
             """, [project_id], return_format="Dict")
             renderer_dict = {r["key"]: r["value"] for r in renderer}
 
@@ -151,7 +151,7 @@ class ProjectHandler(BaseHandler):
                   f.extent,
                   f.source,
                   f.created_by
-                FROM public.project_feature pf
+                FROM bioprotect.project_feature pf
                 JOIN bioprotect.metadata_interest_features f
                   ON f.unique_id = pf.feature_unique_id
                 WHERE pf.project_id = %s
@@ -230,7 +230,7 @@ class ProjectHandler(BaseHandler):
 
     #     # 1. Get main project record
     #     project_row = await pg.execute(
-    #         """SELECT p.* FROM public.projects WHERE id = %s""",
+    #         """SELECT p.* FROM bioprotect.projects WHERE id = %s""",
     #         [project_id],
     #         return_format="Dict"
     #     )
@@ -261,18 +261,18 @@ class ProjectHandler(BaseHandler):
 
     #     # 3. Get run parameters
     #     run_params = await pg.execute("""
-    #         SELECT key, value FROM public.project_run_parameters WHERE project_id = %s
+    #         SELECT key, value FROM bioprotect.project_run_parameters WHERE project_id = %s
     #     """, [project_id], return_format="Dict")
 
     #     # 4. Get input files
     #     files = await pg.execute("""
-    #         SELECT file_type, file_name FROM public.project_files WHERE project_id = %s
+    #         SELECT file_type, file_name FROM bioprotect.project_files WHERE project_id = %s
     #     """, [project_id], return_format="Dict")
     #     files_dict = {row["file_type"]: row["file_name"] for row in files}
 
     #     # 5. Get renderer settings
     #     renderer = await pg.execute("""
-    #         SELECT key, value FROM public.project_renderer WHERE project_id = %s
+    #         SELECT key, value FROM bioprotect.project_renderer WHERE project_id = %s
     #     """, [project_id], return_format="Dict")
     #     renderer_dict = {r["key"]: r["value"] for r in renderer}
 
@@ -510,7 +510,7 @@ class ProjectHandler(BaseHandler):
         """Fetch the first project associated with a user."""
         query = """
             SELECT p.*
-            FROM projects p
+            FROM bioprotect.projects p
             JOIN user_projects up ON p.id = up.project_id
             WHERE up.user_id = %s
             ORDER BY p.date_created ASC

@@ -81,7 +81,7 @@ def create_pressures(activity_dict, rast):
             else:
                 print('doesnt exist')
             cur.execute(SQL(
-                "INSERT INTO bioprotect.temp_pressures (pressure, rast, activity) VALUES (%s, public.ST_MapAlgebra(%s, 1, NULL, '[rast] * %s'), %s)"
+                "INSERT INTO bioprotect.temp_pressures (pressure, rast, activity) VALUES (%s, bioprotect.ST_MapAlgebra(%s, 1, NULL, '[rast] * %s'), %s)"
             ).format(Identifier(activity_dict['activity_name'])),
                 [pressure[1], rast, score, format_act])
             conn.commit()

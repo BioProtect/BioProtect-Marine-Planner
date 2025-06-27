@@ -1069,7 +1069,7 @@ class AuthHandler(BaseHandler):
             # Query user from PostgreSQL
             query = """
                 SELECT id, username, password_hash, role, last_project, show_popup, basemap, use_feature_colours, report_units, refresh_tokens
-                FROM users WHERE username = %s
+                FROM bioprotect.users WHERE username = %s
             """
             result = await pg.execute(query, [username], return_format="Dict")
             print('result: ', result)
@@ -1117,7 +1117,7 @@ class AuthHandler(BaseHandler):
             valid_refresh_tokens.append(refresh_token)
 
             # Update refresh tokens in the database
-            update_query = "UPDATE users SET refresh_tokens = %s WHERE id = %s"
+            update_query = "UPDATE bioprotect.users SET refresh_tokens = %s WHERE id = %s"
             await pg.execute(update_query, [valid_refresh_tokens, user["id"]])
 
             # Set secure cookie for refresh token
@@ -1135,7 +1135,7 @@ class AuthHandler(BaseHandler):
             # Fetch user's projects
             project_query = """
                 SELECT id, name, description, date_created
-                FROM projects WHERE user_id = %s
+                FROM bioprotect.projects WHERE user_id = %s
             """
             project_result = await pg.execute(project_query, [user['id']], return_format="Dict")
 
@@ -1382,7 +1382,7 @@ class getPlanningUnitsCostData(BaseHandler):
             # get the planning units cost information
             # df = file_to_df(os.path.join(self.input_folder,self.projectData["files"]["PUNAME"]))
             query = (
-                f"SELECT * FROM public.pu_costs WHERE project_id={project_id};"
+                f"SELECT * FROM bioprotect.pu_costs WHERE project_id={project_id};"
             )
             df = await pg.execute(query, return_format="DataFrame")
             print('df: ', df)

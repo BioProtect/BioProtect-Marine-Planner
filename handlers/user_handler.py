@@ -154,7 +154,7 @@ class UserHandler(BaseHandler):
 
         query = """
                 SELECT id, username, password_hash, role, last_project, show_popup, basemap, use_feature_colours, report_units, refresh_tokens
-                FROM users WHERE username = %s
+                FROM bioprotect.users WHERE username = %s
             """
         userData = await self.pg.execute(query, [self.get_current_user()], return_format="Dict")
 
@@ -171,7 +171,7 @@ class UserHandler(BaseHandler):
 
         query = """
             SELECT id, username, email, role, date_created
-            FROM users
+            FROM bioprotect.users
             ORDER BY username;
         """
         try:
@@ -221,7 +221,7 @@ class UserHandler(BaseHandler):
             return
 
         if user_id:
-            query = query + "FROM users WHERE id = %s"
+            query = query + "FROM bioprotect.users WHERE id = %s"
             result = await self.pg.execute(query, data=[user_id], return_format="Dict")
             if not result:
                 self.set_status(404)
@@ -264,7 +264,7 @@ class UserHandler(BaseHandler):
                 return
 
             params.append(user_id)
-            query = f"UPDATE users SET {
+            query = f"UPDATE bioprotect.users SET {
                 ', '.join(updates)} WHERE id = ${index}"
             result = await self.pg.execute(query, *params)
             if result == "UPDATE 0":
@@ -284,7 +284,7 @@ class UserHandler(BaseHandler):
         Delete a user.
         """
         try:
-            query = "DELETE FROM users WHERE id = %s"
+            query = "DELETE FROM bioprotect.users WHERE id = %s"
             result = await self.pg.execute(query, int(user_id))
             if result == "DELETE 0":
                 self.set_status(404)
