@@ -29,7 +29,6 @@ from urllib.parse import urlparse
 import shlex
 import inspect
 
-import aiopg
 import colorama
 import geopandas as gpd
 import numpy as np
@@ -299,35 +298,53 @@ async def get_species_data(obj):
     def convert_vals(value):
         return int(value*100)
 
-    # Load species data from the SPECNAME file
-    specname_path = os.path.join(
-        obj.input_folder, obj.projectData["files"]["SPECNAME"])
-    df = file_to_df(specname_path)
+    project_id = obj.projectData["project"]["id"]
+    # Load species data from the db
+    # specname_path = os.path.join(
+    #     obj.input_folder, obj.projectData["files"]["SPECNAME"])
+    # df = file_to_df(specname_path)
+    # Load species data from the database
+    species_data = await obj.pg.execute(
+        """
+        SELECT id, feature_unique_id, prop, spf
+        FROM bioprotect.species_data
+        WHERE project_id = %s
+        """,
+        data=[project_id],
+        return_format="DataFrame"
+    )
 
-    # Prepare DataFrame with `id` as the index
-    output_df = df.set_index("id")
-    output_df["unique_id"] = output_df.index
+    if species_data.empty:
+        obj.speciesData = pd.DataFrame()
+        return
 
-    # Fetch feature data from PostGIS
-    feature_data = await pg.execute("SELECT * FROM bioprotect.get_features()", return_format="DataFrame")
-
-    # Join PostGIS data with species data
-    output_df = output_df.join(feature_data.set_index("unique_id"), how="left")
-    #############################################################
-    # if feature ids dont match with project feature id's everything gets replaced with nan
-    #############################################################
-
-    # Rename columns to match client expectations
-    output_df.rename(columns={
+    # Rename and convert as needed
+    species_data.rename(columns={
         "prop": "target_value",
-        "unique_id": "id"
+        "id": "db_id",
+        "feature_unique_id": "id"
     }, inplace=True)
 
-    # Convert target values from percentage (e.g., 0.17) to integer (e.g., 17)
-    output_df["target_value"] = output_df["target_value"].apply(convert_vals)
+    species_data["target_value"] = species_data["target_value"].apply(
+        convert_vals)
 
+    # Get additional feature metadata from PostGIS
+    feature_data = await obj.pg.execute(
+        "SELECT * FROM bioprotect.get_features()",
+        return_format="DataFrame"
+    )
+
+    # Join species data with feature metadata
+    output_df = species_data.join(
+        feature_data.set_index("unique_id"),
+        on="id",
+        how="left"
+    )
+
+    # Final clean-up
     output_df = output_df.replace(np.nan, None)
-    # Assign the processed DataFrame to the `speciesData` attribute
+
+    # Assign to object
     obj.speciesData = output_df
 
 

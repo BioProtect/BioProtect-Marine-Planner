@@ -55,18 +55,17 @@ class PostGIS:
         async with self.pool.acquire() as conn:
             async with conn.cursor() as cur:
                 try:
-                    if data is not None:
-                        sql_query = cur.mogrify(sql_query, data)
                     logging.debug(f"Executing SQL Query: {sql_query}")
-                    print("Executing SQL Query:", sql_query)
-
                     if socket_handler:
                         pid = conn.get_backend_pid()
                         socket_handler.pid = f'q{pid}'
                         socket_handler.send_response(
                             {'status': 'pid', 'pid': socket_handler.pid})
 
-                    await cur.execute(sql_query)
+                    if data is not None:
+                        await cur.execute(sql_query, data)
+                    else:
+                        await cur.execute(sql_query)
 
                     if return_format is None:
                         return None
@@ -81,6 +80,8 @@ class PostGIS:
                     if return_format == "DataFrame":
                         return df
                     elif return_format == "Dict":
+                        if len(columns) == 2 and columns == ['key', 'value']:
+                            return {row[0]: row[1] for row in records}
                         return df.to_dict(orient="records")
                     elif return_format == "File" and filename:
                         df.to_csv(filename, index=False)

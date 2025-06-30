@@ -54,7 +54,6 @@ class ProjectHandler(BaseHandler):
             SELECT * FROM bioprotect.projects WHERE id = %s;
         """
         result = await self.pg.execute(query, [project_id], return_format="Dict")
-        # ✅ Returns first result or None if not found
         return result[0] if result else None
 
     def create_project_folder(self, project_name, template_folder):
@@ -117,10 +116,7 @@ class ProjectHandler(BaseHandler):
         project_data_list = []
 
         for project in projects:
-            print('--------------------------------- projects: ', projects)
             project_id = project["id"]
-            print('--------------------------------- project_id: ', project_id)
-
             # Fetch run parameters
             run_params = await self.pg.execute("""
                 SELECT key, value FROM bioprotect.project_run_parameters WHERE project_id = %s
@@ -177,7 +173,6 @@ class ProjectHandler(BaseHandler):
 
                 if not df.empty:
                     row = df.iloc[0]
-                    print('============================= row: ', row)
                     pu_metadata = {
                         'pu_alias': row.get('alias'),
                         'pu_description': row.get('description'),
@@ -214,7 +209,6 @@ class ProjectHandler(BaseHandler):
                 'renderer': renderer_dict,
                 "project_features": features,
             })
-        print('project_data_list: ', project_data_list)
         return project_data_list
 
     # async def get_project_data(pg, project_id, obj):
@@ -465,7 +459,7 @@ class ProjectHandler(BaseHandler):
         self.input_folder = join(self.project_path, "input") + sep
 
         # 1. Load project data
-        self.projectData = await self.fetch_project_data(self.project_path)
+        self.projectData = await self.fetch_project_data(project, self.project_path)
 
         # 2. Load species data
         await self.get_species_data(self)
@@ -519,86 +513,80 @@ class ProjectHandler(BaseHandler):
         result = await self.pg.execute(query, [self.current_user], return_format="Dict")
         project = result[0] if result else None
 
-    async def fetch_project_data(self, project_path):
+    async def fetch_project_data(self, project, project_path):
         """Fetches categorized project data from input.dat file."""
-        input_file_params = ["PUNAME", "SPECNAME",
-                             "PUVSPRNAME", "BOUNDNAME", "BLOCKDEF"]
-        run_params = ['BLM', 'PROP', 'RANDSEED', 'NUMREPS', 'NUMITNS',
-                      'STARTTEMP', 'NUMTEMP', 'COSTTHRESH', 'THRESHPEN1',
-                      'THRESHPEN2', 'SAVERUN', 'SAVEBEST', 'SAVESUMMARY',
-                      'SAVESCEN', 'SAVETARGMET', 'SAVESUMSOLN', 'SAVEPENALTY',
-                      'SAVELOG', 'RUNMODE', 'MISSLEVEL', 'ITIMPTYPE', 'HEURTYPE',
-                      'CLUMPTYPE', 'VERBOSITY', 'SAVESOLUTIONSMATRIX']
-        metadata_params = ['DESCRIPTION', 'CREATEDATE', 'PLANNING_UNIT_NAME',
-                           'OLDVERSION', 'IUCN_CATEGORY', 'PRIVATE', 'COSTS']
-        renderer_params = ['CLASSIFICATION', 'NUMCLASSES',
-                           'COLORCODE', 'TOPCLASSES', 'OPACITY']
+        # input_file_params = ["PUNAME", "SPECNAME",
+        #                      "PUVSPRNAME", "BOUNDNAME", "BLOCKDEF"]
+        # run_params = ['BLM', 'PROP', 'RANDSEED', 'NUMREPS', 'NUMITNS',
+        #               'STARTTEMP', 'NUMTEMP', 'COSTTHRESH', 'THRESHPEN1',
+        #               'THRESHPEN2', 'SAVERUN', 'SAVEBEST', 'SAVESUMMARY',
+        #               'SAVESCEN', 'SAVETARGMET', 'SAVESUMSOLN', 'SAVEPENALTY',
+        #               'SAVELOG', 'RUNMODE', 'MISSLEVEL', 'ITIMPTYPE', 'HEURTYPE',
+        #               'CLUMPTYPE', 'VERBOSITY', 'SAVESOLUTIONSMATRIX']
 
-        params_array, files_dict, metadata_dict, renderer_dict = [], {}, {}, {}
+        # Load each part from its respective table
+        print('project: ', project)
+        print('project.id: ', project.get('id'))
+        project_id = project.get('id')
+        run_params = await self.pg.execute(
+            "SELECT key, value FROM bioprotect.project_run_parameters WHERE project_id = %s",
+            data=[project_id],
+            return_format="Array"
+        )
 
-        key_mappings = {
-            **{key: files_dict for key in input_file_params},
-            **{key: params_array for key in run_params},
-            **{key: renderer_dict for key in renderer_params},
-            **{key: metadata_dict for key in metadata_params},
-        }
+        renderer = await self.pg.execute(
+            "SELECT key, value FROM bioprotect.project_renderer WHERE project_id = %s",
+            data=[project_id],
+            return_format="Dict"
+        )
 
-        # Load input.dat file
-        input_file_path = join(project_path, "input.dat")
-        file_content = read_file(input_file_path)
+        metadata = await self.pg.execute(
+            "SELECT key, value FROM bioprotect.project_metadata WHERE project_id = %s",
+            data=[project_id],
+            return_format="Dict"
+        )
+        metadata["description"] = project["description"]
+        metadata["createdate"] = project["date_created"]
+        metadata["pu_id"] = project["planning_unit_id"]
+        metadata["iucn_category"] = project["iucn_category"]
+        metadata["costs"] = project["costs"]
 
-        # Process file content
-        for key in get_keys(file_content):
-            key_value = get_key_value(file_content, key)
+        df = await self.pg.execute(
+            "SELECT * FROM bioprotect.get_planning_units_metadata(%s)",
+            data=[int(project["planning_unit_id"])], return_format="DataFrame")
 
-            if key in key_mappings:
-                target_dict = key_mappings[key]
+        if not df.empty:
+            row = df.iloc[0]
+            pu_meta = ({
+                'pu_alias': row.get('alias', 'not found'),
+                'pu_country': row.get('country', 'Unknown'),
+                'pu_description': row.get('description', 'No description'),
+                'pu_domain': row.get('domain', 'Unknown domain'),
+                'pu_area': row.get('area', 'Unknown area'),
+                'pu_creation_date': row.get('creation_date', 'Unknown date'),
+                'pu_created_by': row.get('created_by', 'Unknown')
+            })
+        else:
+            pu_meta = ({
+                'pu_alias': "no planning unit attached",
+                'pu_description': 'No description',
+                'pu_domain': 'Unknown domain',
+                'pu_area': 'Unknown area',
+                'pu_creation_date': 'Unknown date',
+                'pu_created_by': 'Unknown',
+                'pu_country': 'Unknown'
+            })
 
-                value = key_value[1]
-
-                # Convert datetime objects to ISO format
-                if isinstance(value, datetime):
-                    value = value.isoformat()
-
-                if target_dict is params_array:
-                    target_dict.append(
-                        {'key': key_value[0], 'value': value})  # List case
-                else:
-                    target_dict[key_value[0]] = value  # Dictionary case
-
-                if key == 'PLANNING_UNIT_NAME':
-                    df = await self.pg.execute(
-                        "SELECT * FROM bioprotect.get_planning_units_metadata(%s)",
-                        data=[key_value[1]], return_format="DataFrame")
-
-                    if df.empty:
-                        metadata_dict.update({
-                            'pu_alias': key_value[1],
-                            'pu_description': 'No description',
-                            'pu_domain': 'Unknown domain',
-                            'pu_area': 'Unknown area',
-                            'pu_creation_date': 'Unknown date',
-                            'pu_created_by': 'Unknown',
-                            'pu_country': 'Unknown'
-                        })
-                    else:
-                        row = df.iloc[0]
-                        metadata_dict.update({
-                            'pu_alias': row.get('alias', key_value[1]),
-                            'pu_country': row.get('country', 'Unknown'),
-                            'pu_description': row.get('description', 'No description'),
-                            'pu_domain': row.get('domain', 'Unknown domain'),
-                            'pu_area': row.get('area', 'Unknown area'),
-                            'pu_creation_date': row.get('creation_date', 'Unknown date'),
-                            'pu_created_by': row.get('created_by', 'Unknown')
-                        })
-
+        metadata.update(pu_meta)
+        # # Convert datetime objects to ISO format
+        # if isinstance(value, datetime):
+        #     value = value.isoformat()
         return {
             'project': self.project,
-            'metadata': metadata_dict,
-            'files': files_dict,
-            'runParameters': params_array,
-            'renderer': renderer_dict
+            'metadata': metadata,
+            'files': [],
+            'runParameters': run_params,
+            'renderer': renderer
         }
 
     async def get_projects(self):
