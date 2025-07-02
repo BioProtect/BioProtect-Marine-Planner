@@ -129,10 +129,9 @@ class ProjectHandler(BaseHandler):
             files_dict = {f["file_type"]: f["file_name"] for f in files}
 
             # Fetch renderer config
-            renderer = await self.pg.execute("""
+            renderer_dict = await self.pg.execute("""
                 SELECT key, value FROM bioprotect.project_renderer WHERE project_id = %s
             """, [project_id], return_format="Dict")
-            renderer_dict = {r["key"]: r["value"] for r in renderer}
 
             # Fetch project features.
             features = await self.pg.execute("""
@@ -463,13 +462,16 @@ class ProjectHandler(BaseHandler):
 
         # 2. Load species data
         await self.get_species_data(self)
-
-        # 3. Load and normalize planning unit data
         self.speciesPreProcessingData = file_to_df(
             join(self.input_folder, "feature_preprocessing.dat"))
 
-        df = file_to_df(
-            join(self.input_folder, self.projectData["files"]["PUNAME"]))
+        # 3. Load and normalize planning unit data
+        query = """
+            SELECT h3_index AS id, cost, status
+            FROM bioprotect.project_pus
+            WHERE project_id = %s
+        """
+        df = await self.pg.execute(query, data=[self.project["id"]], return_format="DataFrame")
         self.planningUnitsData = normalize_dataframe(df, "status", "id")
 
         protected_areas_df = file_to_df(
@@ -497,7 +499,9 @@ class ProjectHandler(BaseHandler):
             'protected_area_intersections': self.protectedAreaIntersectionsData,
             'costnames': self.costNames
         }
+        print('data: ', data)
         response = json.dumps(data, default=self.json_serial)
+        print('response: ', response)
         self.send_response(response)
 
     async def get_first_project_by_user(self):

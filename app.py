@@ -1074,9 +1074,7 @@ class AuthHandler(BaseHandler):
             # comment:
             body = json_decode(self.request.body)
             username = body.get("user")
-            print('============================username: ', username)
             pwd = body.get("pwd")
-            print('pwd: ', pwd)
 
             if not username or not pwd:
                 self.set_status(400)
@@ -1089,7 +1087,6 @@ class AuthHandler(BaseHandler):
                 FROM bioprotect.users WHERE username = %s
             """
             result = await pg.execute(query, [username], return_format="Dict")
-            print('result: ', result)
             # notifications = get_notifications_data(self)
 
             if not result:
