@@ -56,19 +56,26 @@ class ProjectHandler(BaseHandler):
         result = await self.pg.execute(query, [project_id], return_format="Dict")
         return result[0] if result else None
 
-    def create_project_folder(self, project_name, template_folder):
-        project_path = join(self.folder_user, project_name)
+    async def create_project_folder(self, project_name, template_folder):
+        # project_path = join(self.folder_user, project_name)
 
-        # Ensure the project does not already exist
-        if exists(project_path):
-            raise ServicesError(f"The project '{project_name}' already exists")
+        # # Ensure the project does not already exist
+        # if exists(project_path):
+        #     raise ServicesError(f"The project '{project_name}' already exists")
 
-        copy_directory(template_folder, project_path)
-        # Update the folder paths for the new project in the handler object
-        set_folder_paths(self, {
-            'user': [self.user.encode("utf-8")],
-            'project': [project_name.encode("utf-8")]
-        })
+        # copy_directory(template_folder, project_path)
+        # # Update the folder paths for the new project in the handler object
+        # set_folder_paths(self, {
+        #     'user': [self.user.encode("utf-8")],
+        #     'project': [project_name.encode("utf-8")]
+        # })
+        await self.pg.execute(
+            """
+            INSERT INTO bioprotect.projects (user_id, name, description, planning_unit_id, ...)
+            VALUES (%s, %s, %s, %s, ...)
+            """,
+            [user_id, project_name, description, planning_unit_id]
+        )
 
     def update_file_parameters(self, filename, new_params):
         """
@@ -209,104 +216,6 @@ class ProjectHandler(BaseHandler):
                 "project_features": features,
             })
         return project_data_list
-
-    # async def get_project_data(pg, project_id, obj):
-    #     """
-    #     Fetches the project data from the database and sets it on the passed object
-    #     in the projectData attribute. This replaces the old input.dat file parsing logic.
-
-    #     Args:
-    #         obj (BaseHandler): The request handler instance.
-    #     Returns:
-    #         None
-    #     """
-
-    #     # 1. Get main project record
-    #     project_row = await pg.execute(
-    #         """SELECT p.* FROM bioprotect.projects WHERE id = %s""",
-    #         [project_id],
-    #         return_format="Dict"
-    #     )
-    #     if not project_row:
-    #         raise ServicesError(f"No project data found for project_id {project_id}")
-    #     project_row = project_row[0]
-
-    #     # 2. Get planning unit metadata (if set)
-    #     pu_metadata = {}
-    #     if project_row.get("planning_unit_id"):
-    #         df = await pg.execute("""
-    #             SELECT alias, description, domain, _area AS area, creation_date, created_by, original_n AS country
-    #             FROM bioprotect.metadata_planning_units
-    #             WHERE unique_id = %s
-    #         """, [project_row["planning_unit_id"]], return_format="DataFrame")
-
-    #         if not df.empty:
-    #             row = df.iloc[0]
-    #             pu_metadata = {
-    #                 'pu_alias': row.get('alias'),
-    #                 'pu_description': row.get('description'),
-    #                 'pu_domain': row.get('domain'),
-    #                 'pu_area': row.get('area'),
-    #                 'pu_creation_date': row.get('creation_date'),
-    #                 'pu_created_by': row.get('created_by'),
-    #                 'pu_country': row.get('country'),
-    #             }
-
-    #     # 3. Get run parameters
-    #     run_params = await pg.execute("""
-    #         SELECT key, value FROM bioprotect.project_run_parameters WHERE project_id = %s
-    #     """, [project_id], return_format="Dict")
-
-    #     # 4. Get input files
-    #     files = await pg.execute("""
-    #         SELECT file_type, file_name FROM bioprotect.project_files WHERE project_id = %s
-    #     """, [project_id], return_format="Dict")
-    #     files_dict = {row["file_type"]: row["file_name"] for row in files}
-
-    #     # 5. Get renderer settings
-    #     renderer = await pg.execute("""
-    #         SELECT key, value FROM bioprotect.project_renderer WHERE project_id = %s
-    #     """, [project_id], return_format="Dict")
-    #     renderer_dict = {r["key"]: r["value"] for r in renderer}
-
-    #     # 6. Compose metadata dictionary
-    #     metadata_dict = {
-    #         "DESCRIPTION": project_row.get("description"),
-    #         "CREATEDATE": project_row.get("created_at"),
-    #         "OLDVERSION": project_row.get("old_version"),
-    #         "IUCN_CATEGORY": project_row.get("iucn_category"),
-    #         "PRIVATE": project_row.get("is_private"),
-    #         "COSTS": project_row.get("costs"),
-    #         "PLANNING_UNIT_NAME": pu_metadata.get("pu_alias"),  # for backward compatibility
-    #         **pu_metadata
-    #     }
-
-    #     # 7. Attach to the object
-    #     obj.projectData = {
-    #         'project': project_row.get("name"),
-    #         'metadata': metadata_dict,
-    #         'files': files_dict,
-    #         'runParameters': run_params,
-    #         'renderer': renderer_dict
-    #     }
-
-    def get_costs(self):
-        """
-        Sets the custom cost profiles for a project in the costNames attribute of the given object.
-
-        Args:
-            obj (BaseHandler): The request handler instance with `input_folder` and `costNames` attributes.
-        """
-        # Retrieve all cost files in the input folder
-        cost_files = glob.glob(join(self.input_folder, "*.cost"))
-
-        # Extract and store the base names of the cost files
-        cost_names = [splitext(basename(file))[
-            0] for file in cost_files]
-
-        # Append the default cost profile and sort the list
-        cost_names = sorted(cost_names + ["Equal area"])
-        self.costNames = cost_names
 
     async def post(self):
         """
@@ -480,11 +389,22 @@ class ProjectHandler(BaseHandler):
             protected_areas_df, "iucn_cat", "puid")
 
         # 4. Get project costs
-        self.get_costs()
+        cost_rows = await self.pg.execute("""
+            SELECT name FROM bioprotect.project_cost_profiles WHERE project_id = %s
+        """, [project_id], return_format="Dict")
 
-        # 5. Update user data file - shouldnt need to do this - should be updating the db
-        self.update_file_parameters(join(self.folder_user, "user.dat"), {
-                                    'LASTPROJECT': project})
+        self.costNames = sorted([row["name"]
+                                for row in cost_rows] + ["Equal area"])
+
+        # 5. Update user
+        await self.pg.execute(
+            """
+            UPDATE bioprotect.users
+            SET last_project = %s
+            WHERE id = %s
+            """,
+            data=[self.project_id, self.current_user_id]
+        )
 
         data = {
             'user': self.current_user,
@@ -499,9 +419,7 @@ class ProjectHandler(BaseHandler):
             'protected_area_intersections': self.protectedAreaIntersectionsData,
             'costnames': self.costNames
         }
-        print('data: ', data)
         response = json.dumps(data, default=self.json_serial)
-        print('response: ', response)
         self.send_response(response)
 
     async def get_first_project_by_user(self):
