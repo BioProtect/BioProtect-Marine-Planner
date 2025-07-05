@@ -1,12 +1,12 @@
 import contextlib
 import json
 import traceback
+from datetime import datetime
+from decimal import Decimal
 
 from classes.folder_path_config import get_folder_path_config
-from tornado.web import RequestHandler
 from services.service_error import ServicesError, raise_error
-from datetime import datetime
-
+from tornado.web import RequestHandler
 
 proj_paths = get_folder_path_config()
 
@@ -71,10 +71,11 @@ class BaseHandler(RequestHandler):
             None
         """
         # Convert datetime objects to string
-
         def json_serial(obj):
             if isinstance(obj, datetime):
-                return obj.isoformat()  # Convert to string format
+                return obj.isoformat()
+            if isinstance(obj, Decimal):
+                return float(obj)
             raise TypeError(f"Type {type(obj)} not serializable")
 
         self.set_header('Content-Type', 'application/json')

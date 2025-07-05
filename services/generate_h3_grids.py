@@ -16,10 +16,19 @@ db_url = (
 engine = create_engine(db_url)
 
 
-def gen_grid(shapefile):
+def get_scale_level(resolution):
+    if resolution <= 2:
+        return "basin"
+    elif 3 <= resolution <= 5:
+        return "regional"
+    else:
+        return "local"
+
+
+def gen_grid(shapefile, min):
     # Load ICES shapefile
     df = gpd.read_file(shapefile)
-    resolution = 4  # or adjust as needed
+    resolution = zoom_lvl  # or adjust as needed
     records = []
     for _, row in df.iterrows():
         name = row['Ecoregion']
@@ -55,10 +64,10 @@ def gen_grid(shapefile):
 
     gdf_out = gpd.GeoDataFrame(records, geometry='geometry', crs='EPSG:4326')
     print(f"Inserting {len(gdf_out)} H3 cells into PostGIS...")
-    gdf_out.to_postgis('h3_cells', engine, schema='bioprotect',
+    gdf_out.to_postgis(f'h3_cells', engine, schema='bioprotect',
                        if_exists='append', index=False)
 
 
 if __name__ == "__main__":
     gen_grid(
-        "./data/shapefiles/ICES_ecoregions/ICES_ecoregions_20171207_erase_ESRI.shp")
+        "./data/shapefiles/ICES_ecoregions/ICES_ecoregions_20171207_erase_ESRI.shp", 6)

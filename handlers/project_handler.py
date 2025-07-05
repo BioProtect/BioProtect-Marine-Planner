@@ -349,6 +349,7 @@ class ProjectHandler(BaseHandler):
     # GET /projects?action=get&user=username&project=project_name
     async def get_project(self):
         project_id = self.get_argument('projectId', None)
+        resolution = int(self.get_argument("resolution", 6))
 
         try:
             project_id = int(project_id) if project_id else None
@@ -363,11 +364,28 @@ class ProjectHandler(BaseHandler):
         # Define project paths
         self.project = project
         self.folder_user = join("./users", self.current_user)
+        print('self.current_user: ', self.current_user)
         self.project_path = join(self.folder_user, project['name']) + sep
         self.input_folder = join(self.project_path, "input") + sep
 
         # 1. Load project data
         self.projectData = await self.fetch_project_data(project, self.project_path)
+
+        #  Get available H3 resolutions for this planning area
+        res_query = """
+            SELECT DISTINCT resolution
+            FROM bioprotect.h3_cells
+            WHERE project_area = (
+                SELECT mpu.alias
+                FROM bioprotect.projects p
+                JOIN bioprotect.metadata_planning_units mpu ON p.planning_unit_id = mpu.unique_id
+                WHERE p.id = %s
+            )
+            ORDER BY resolution;
+        """
+        available_resolutions = await self.pg.execute(res_query, data=[project_id], return_format="Dict")
+        available_resolutions = [r["resolution"]
+                                 for r in available_resolutions]
 
         # 2. Load species data
         await self.get_species_data(self)
@@ -376,11 +394,17 @@ class ProjectHandler(BaseHandler):
 
         # 3. Load and normalize planning unit data
         query = """
-            SELECT h3_index AS id, cost, status
-            FROM bioprotect.project_pus
-            WHERE project_id = %s
+            SELECT pp.h3_index AS id, pp.cost, pp.status
+            FROM bioprotect.project_pus pp
+            JOIN bioprotect.h3_cells hc ON pp.h3_index = hc.h3_index
+            JOIN bioprotect.projects p ON p.id = pp.project_id
+            JOIN bioprotect.metadata_planning_units mpu ON p.planning_unit_id = mpu.unique_id
+            WHERE pp.project_id = %s
+            AND hc.resolution = %s
+            AND hc.project_area = mpu.alias
         """
-        df = await self.pg.execute(query, data=[self.project["id"]], return_format="DataFrame")
+        df = await self.pg.execute(query, data=[self.project["id"], resolution], return_format="DataFrame")
+
         self.planningUnitsData = normalize_dataframe(df, "status", "id")
 
         protected_areas_df = file_to_df(
@@ -389,12 +413,28 @@ class ProjectHandler(BaseHandler):
             protected_areas_df, "iucn_cat", "puid")
 
         # 4. Get project costs
-        cost_rows = await self.pg.execute("""
-            SELECT name FROM bioprotect.project_cost_profiles WHERE project_id = %s
-        """, [project_id], return_format="Dict")
+        # NOT WHOLLY SURE ABOUT THIS _ NOT ACTUALLY GETTING COSTS
+        query = """SELECT 1 FROM bioprotect.costs WHERE project_id = %s LIMIT 1"""
+        cost_rows = await self.pg.execute(query, data=[self.project["id"]], return_format="Dict")
 
-        self.costNames = sorted([row["name"]
-                                for row in cost_rows] + ["Equal area"])
+        # If any cost data exists, add "Custom" profile
+        self.costNames = [
+            "Custom", "Equal area"] if cost_rows else ["Equal area"]
+
+        # costs = await self.pg.execute("""
+        #     SELECT id, cost
+        #     FROM bioprotect.project_costs
+        #     WHERE project_id = %s
+        # """, [project_id], return_format="Dict")
+
+        # MATCH COSTS UP WITH PLANNING UNITS
+        # costs = await self.pg.execute("""
+        #     SELECT pc.id, pc.cost, pp.status
+        #     FROM bioprotect.project_costs pc
+        #     JOIN bioprotect.project_pus pp
+        #     ON pc.project_id = pp.project_id AND pc.id = pp.h3_index
+        #     WHERE pc.project_id = %s
+        # """, [project_id], return_format="Dict")
 
         # 5. Update user
         await self.pg.execute(
@@ -403,7 +443,7 @@ class ProjectHandler(BaseHandler):
             SET last_project = %s
             WHERE id = %s
             """,
-            data=[self.project_id, self.current_user_id]
+            data=[self.project["id"], self.project["user_id"]]
         )
 
         data = {
@@ -417,7 +457,8 @@ class ProjectHandler(BaseHandler):
             'feature_preprocessing': self.speciesPreProcessingData.to_dict(orient="split")["data"],
             'planning_units': self.planningUnitsData,
             'protected_area_intersections': self.protectedAreaIntersectionsData,
-            'costnames': self.costNames
+            'costnames': self.costNames,
+            "available_resolutions": available_resolutions,
         }
         response = json.dumps(data, default=self.json_serial)
         self.send_response(response)
@@ -437,18 +478,6 @@ class ProjectHandler(BaseHandler):
 
     async def fetch_project_data(self, project, project_path):
         """Fetches categorized project data from input.dat file."""
-        # input_file_params = ["PUNAME", "SPECNAME",
-        #                      "PUVSPRNAME", "BOUNDNAME", "BLOCKDEF"]
-        # run_params = ['BLM', 'PROP', 'RANDSEED', 'NUMREPS', 'NUMITNS',
-        #               'STARTTEMP', 'NUMTEMP', 'COSTTHRESH', 'THRESHPEN1',
-        #               'THRESHPEN2', 'SAVERUN', 'SAVEBEST', 'SAVESUMMARY',
-        #               'SAVESCEN', 'SAVETARGMET', 'SAVESUMSOLN', 'SAVEPENALTY',
-        #               'SAVELOG', 'RUNMODE', 'MISSLEVEL', 'ITIMPTYPE', 'HEURTYPE',
-        #               'CLUMPTYPE', 'VERBOSITY', 'SAVESOLUTIONSMATRIX']
-
-        # Load each part from its respective table
-        print('project: ', project)
-        print('project.id: ', project.get('id'))
         project_id = project.get('id')
         run_params = await self.pg.execute(
             "SELECT key, value FROM bioprotect.project_run_parameters WHERE project_id = %s",
@@ -559,7 +588,6 @@ class ProjectHandler(BaseHandler):
         })
 
     # GET /projects?action=clone&user=username&project=project_name
-
     async def clone_project(self):
         self.validate_args(self.request.arguments, ['user', 'project'])
 

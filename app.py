@@ -1395,21 +1395,30 @@ class getPlanningUnitsCostData(BaseHandler):
             project_id = self.get_argument("project")
             # get the planning units cost information
             # df = file_to_df(os.path.join(self.input_folder,self.projectData["files"]["PUNAME"]))
-            query = (
-                f"SELECT * FROM bioprotect.pu_costs WHERE project_id={project_id};"
-            )
-            df = await pg.execute(query, return_format="DataFrame")
+            query = """
+                SELECT * FROM bioprotect.pu_costs WHERE project_id= %s;
+            """
+            df = await pg.execute(query, data=[project_id], return_format="DataFrame")
             print('df: ', df)
+
+            if df.empty:
+                self.send_response({
+                    "data": [],
+                    "min": None,
+                    "max": None
+                })
+                return
 
             # normalise the planning unit cost data to make the payload smaller
             data = normalize_dataframe(df, "cost", "id", 9)
-            print('data: ', data)
+            bins, min_value, max_value = normalize_dataframe(
+                df, "cost", "id", classes=9)
 
             # set the response
             self.send_response({
-                "data": data[0],
-                'min': str(data[1]),
-                'max': str(data[2])
+                "data": bins,
+                'min': str(min_value),
+                'max': str(max_value)
             })
         except ServicesError as e:
             raise_error(self, e.args[0])
