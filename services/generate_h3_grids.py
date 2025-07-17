@@ -25,7 +25,7 @@ def get_scale_level(resolution):
         return "local"
 
 
-def gen_grid(shapefile, min):
+def gen_grid(shapefile, zoom_lvl):
     # Load ICES shapefile
     df = gpd.read_file(shapefile)
     resolution = zoom_lvl  # or adjust as needed

@@ -357,6 +357,8 @@ class ProjectHandler(BaseHandler):
             raise ServicesError("Invalid project ID")
 
         project = await self.get_project_by_id(project_id) if project_id else None
+        print('++++++ project_id: ', project_id)
+        print('++++++ project: ', project)
 
         if project is None:
             raise ServicesError(f"That project does not exist")
