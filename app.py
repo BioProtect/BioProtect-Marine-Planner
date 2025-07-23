@@ -1647,15 +1647,18 @@ class getResults(BaseHandler):
             # get the best solution
             best_solution_file = os.path.join(
                 self.output_folder, "output_mvbest")
-            self.bestSolution = file_to_df(get_output_file(best_solution_file))
+            # self.bestSolution = file_to_df(get_output_file(best_solution_file))
+            self.bestSolution = pd.DataFrame()
 
             # get the output sum
             output_sum_file = os.path.join(self.output_folder, "output_sum")
-            self.outputSummary = file_to_df(get_output_file(output_sum_file))
+            # self.outputSummary = file_to_df(get_output_file(output_sum_file))
+            self.outputSummary = pd.DataFrame()
 
             # get the summed solution
-            summed_sol_df = file_to_df(get_output_file(
-                os.path.join(self.output_folder, "output_ssoln")))
+            # summed_sol_df = file_to_df(get_output_file(
+            #     os.path.join(self.output_folder, "output_ssoln")))
+            summed_sol_df = pd.DataFrame()
 
             self.summedSolution = normalize_dataframe(
                 summed_sol_df, "number", "planning_unit")

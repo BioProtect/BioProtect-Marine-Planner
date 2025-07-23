@@ -9,8 +9,10 @@ def get_best_solution(obj):
     Returns:
         None
     """
-    filename = get_output_file(obj.output_folder + "output_mvbest")
-    obj.bestSolution = _loadCSV(filename)
+    print(f"THE FILE  {obj.output_folder} output_mvbest DOES NOT EXIST")
+    print("RESULTS SERVICE file......")
+    # filename = get_output_file(obj.output_folder + "output_mvbest")
+    # obj.bestSolution = _loadCSV(filename)
 
 
 def _getOutputSummary(obj):
@@ -21,5 +23,7 @@ def _getOutputSummary(obj):
     Returns:
         None
     """
-    filename = get_output_file(obj.output_folder + "output_sum")
-    obj.outputSummary = _loadCSV(filename)
+    print(f"THE FILE  {obj.output_folder} output_sum DOES NOT EXIST")
+    print("RESULTS SERVICE file......")
+    # filename = get_output_file(obj.output_folder + "output_sum")
+    # obj.outputSummary = _loadCSV(filename)
