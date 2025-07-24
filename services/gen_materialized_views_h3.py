@@ -11,12 +11,11 @@ db_url = (
 )
 engine = create_engine(db_url)
 
-
 """
-Creates views for each project area and resolution in bioprotect.h3_cells,
+Creates materialized views for each project area and resolution in bioprotect.h3_cells,
 and inserts metadata into bioprotect.metadata_planning_units.
 """
-print("🔄 Creating views and metadata for H3 cells...")
+print("🔄 Creating materialized views and metadata for H3 cells...")
 
 with engine.begin() as conn:  # ensures transaction
     result = conn.execute(text("""
@@ -31,20 +30,31 @@ with engine.begin() as conn:  # ensures transaction
             " ", "_").replace("-", "_").replace("/", "_")
         view_name = f"v_h3_{scale_safe}_res{resolution}"
 
-        print(f"🧱 Creating view: {view_name}")
+        print(f"🧱 Creating materialized view: {view_name}")
 
-        # 1. Create the SQL view with explicit column list
+        # 1. Drop existing materialized view if it exists
+
         conn.execute(
-            text(f"DROP VIEW IF EXISTS bioprotect.{view_name} CASCADE"))
+            text(
+                f"DROP VIEW IF EXISTS bioprotect.{view_name} CASCADE")
+        )
 
+        # 2. Create the new materialized view
         conn.execute(text(f"""
-            CREATE OR REPLACE VIEW bioprotect.{view_name} AS
+            CREATE MATERIALIZED VIEW bioprotect.{view_name} AS
             SELECT h3_index, resolution, scale_level, project_area, geometry, cost, status
             FROM bioprotect.h3_cells
-            WHERE project_area = :area AND resolution = :res
+            WHERE project_area = :area AND resolution = :res;
         """), {"area": project_area, "res": resolution})
 
-        # 2. Check if metadata already exists
+        # 3. Create spatial index
+        conn.execute(text(f"""
+            CREATE INDEX idx_{view_name}_geom
+            ON bioprotect.{view_name}
+            USING GIST (geometry);
+        """))
+
+        # 4. Check if metadata already exists
         exists = conn.execute(text("""
             SELECT 1 FROM bioprotect.metadata_planning_units
             WHERE feature_class_name = :view_name
@@ -55,8 +65,7 @@ with engine.begin() as conn:  # ensures transaction
                 f"ℹ️ Metadata for {view_name} already exists. Skipping insert.")
             continue
 
-        print(
-            f"📥 Inserting metadata for: {project_area} (res {resolution})")
+        print(f"📥 Inserting metadata for: {project_area} (res {resolution})")
         conn.execute(text(f"""
             INSERT INTO bioprotect.metadata_planning_units (
                 feature_class_name,
@@ -77,7 +86,7 @@ with engine.begin() as conn:  # ensures transaction
                 :view_name,
                 :alias,
                 :description,
-                1, 
+                1,
                 1,
                 'marine',
                 0,
@@ -92,7 +101,7 @@ with engine.begin() as conn:  # ensures transaction
         """), {
             "view_name": view_name,
             "alias": f"{project_area} (Res {resolution})",
-            "description": f"Auto-generated H3 grid at res {resolution} for {project_area}"
+            "description": f"Auto-generated materialized H3 grid at res {resolution} for {project_area}"
         })
 
-    print("✅ Done creating views and metadata entries.")
+    print("✅ Done creating materialized views and metadata entries.")

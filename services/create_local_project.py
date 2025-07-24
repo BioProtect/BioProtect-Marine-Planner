@@ -101,4 +101,6 @@ def create_project_from_shapefile(shapefile_path, user_id, resolution=7, scale_l
 
 if __name__ == "__main__":
     create_project_from_shapefile(
-        "./data/tralee_bay.shp", user_id=2, resolution=8, scale_level='local')
+        "./data/tralee_bay.shp", user_id=4, resolution=8, scale_level='local')
+    create_project_from_shapefile(
+        "./data/dunmore_east.shp", user_id=4, resolution=8, scale_level='local')

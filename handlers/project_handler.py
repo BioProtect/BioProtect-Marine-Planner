@@ -349,7 +349,7 @@ class ProjectHandler(BaseHandler):
     # GET /projects?action=get&user=username&project=project_name
     async def get_project(self):
         project_id = self.get_argument('projectId', None)
-        resolution = int(self.get_argument("resolution", 6))
+        resolution = int(self.get_argument("resolution", 7))
 
         try:
             project_id = int(project_id) if project_id else None
@@ -372,22 +372,6 @@ class ProjectHandler(BaseHandler):
 
         # 1. Load project data
         self.projectData = await self.fetch_project_data(project, self.project_path)
-
-        #  Get available H3 resolutions for this planning area
-        res_query = """
-            SELECT DISTINCT resolution
-            FROM bioprotect.h3_cells
-            WHERE project_area = (
-                SELECT mpu.alias
-                FROM bioprotect.projects p
-                JOIN bioprotect.metadata_planning_units mpu ON p.planning_unit_id = mpu.unique_id
-                WHERE p.id = %s
-            )
-            ORDER BY resolution;
-        """
-        available_resolutions = await self.pg.execute(res_query, data=[project_id], return_format="Dict")
-        available_resolutions = [r["resolution"]
-                                 for r in available_resolutions]
 
         # 2. Load species data
         await self.get_species_data(self)
@@ -460,7 +444,6 @@ class ProjectHandler(BaseHandler):
             'planning_units': self.planningUnitsData,
             'protected_area_intersections': self.protectedAreaIntersectionsData,
             'costnames': self.costNames,
-            "available_resolutions": available_resolutions,
         }
         response = json.dumps(data, default=self.json_serial)
         self.send_response(response)
@@ -511,6 +494,7 @@ class ProjectHandler(BaseHandler):
         if not df.empty:
             row = df.iloc[0]
             pu_meta = ({
+                'pu_tilesetid': row.get('feature_class_name', 'not found'),
                 'pu_alias': row.get('alias', 'not found'),
                 'pu_country': row.get('country', 'Unknown'),
                 'pu_description': row.get('description', 'No description'),

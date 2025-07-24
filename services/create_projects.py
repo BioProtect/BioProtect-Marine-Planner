@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from geoalchemy2 import Geometry
 from classes.db_config import DBConfig
 from datetime import datetime
@@ -13,6 +13,16 @@ db_url = (
     f"{config.DATABASE_HOST}/{config.DATABASE_NAME}"
 )
 engine = create_engine(db_url)
+
+# ✅ Get first user ID from database
+with engine.connect() as conn:
+    result = conn.execute(
+        text("SELECT id FROM bioprotect.users ORDER BY id ASC LIMIT 1"))
+    first_user = result.fetchone()
+    if not first_user:
+        raise ValueError("❌ No users found in the database.")
+    user_id = first_user[0]
+
 
 # Load all H3 cells into a GeoDataFrame
 gdf = gpd.read_postgis("""
@@ -69,7 +79,7 @@ for region in regions:
 
     # 4. Insert into projects
     project_df = pd.DataFrame([{
-        'user_id': 2,
+        'user_id': user_id,
         'name': region,
         'description': f'Project for ICES region {region}',
         'date_created': datetime.utcnow(),
@@ -77,7 +87,8 @@ for region in regions:
         'old_version': None,
         'iucn_category': None,
         'is_private': False,
-        'costs': 'Equal Area'
+        'costs': 'Equal Area',
+        'default_resolution': 7
     }])
     project_df.to_sql("projects", engine, schema="bioprotect",
                       if_exists="append", index=False)
@@ -89,7 +100,7 @@ for region in regions:
     ).iloc[0]['id']
 
     # 5. Link to user_projects
-    pd.DataFrame([{'user_id': 2, 'project_id': project_id}]).to_sql(
+    pd.DataFrame([{'user_id': user_id, 'project_id': project_id}]).to_sql(
         'user_projects', engine, schema='bioprotect', if_exists='append', index=False)
 
     print(
