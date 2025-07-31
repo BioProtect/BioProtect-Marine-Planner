@@ -103,7 +103,7 @@ class PostGIS:
         return (
             f'"{self.config.OGR2OGR_EXECUTABLE}" -f "PostgreSQL" PG:"host={self.config.DATABASE_HOST} '
             f'user={self.config.DATABASE_USER} dbname={self.config.DATABASE_NAME} password={self.config.DATABASE_PASSWORD}" '
-            f'"{os.path.join(folder, filename)}" -nlt GEOMETRY -lco SCHEMA=marxan -lco GEOMETRY_NAME=geometry '
+            f'"{os.path.join(folder, filename)}" -nlt GEOMETRY -lco SCHEMA=bioprotect -lco GEOMETRY_NAME=geometry '
             f'{source_feature_class} -nln {feature_class_name} -s_srs {s_epsg_code} -t_srs {t_epsg_code} -lco precision=NO'
         )
 
@@ -122,7 +122,7 @@ class PostGIS:
         cmd = (
             f'"{self.config.OGR2OGR_EXECUTABLE}" -f "ESRI Shapefile" "{export_folder}" PG:"host={self.config.DATABASE_HOST} '
             f'user={self.config.DATABASE_USER} dbname={self.config.DATABASE_NAME} password={self.config.DATABASE_PASSWORD} '
-            f'ACTIVE_SCHEMA=marxan" -sql "SELECT * FROM {feature_class_name};" -nln {feature_class_name} -t_srs {t_epsg_code}'
+            f'ACTIVE_SCHEMA=bioprotect" -sql "SELECT * FROM {feature_class_name};" -nln {feature_class_name} -t_srs {t_epsg_code}'
         )
         try:
             result = await run_command(cmd)
@@ -171,12 +171,34 @@ class PostGIS:
     async def import_file_GDBFeatureClass(self, folder, fileGDB, sourceFeatureClass, destFeatureClass, s_epsg_code="EPSG:4326", t_epsg_code="EPSG:4326", splitAtDateline=True):
         await self.import_file(folder, fileGDB, destFeatureClass, s_epsg_code, t_epsg_code, splitAtDateline, sourceFeatureClass)
 
+    # async def is_valid(self, feature_class_name):
+    #     query = f"SELECT DISTINCT ST_IsValid(geometry) FROM bioprotect.{feature_class_name} LIMIT 1;"
+    #     result = await self.execute(query, return_format="Array")
+    #     if not result[0]['st_isvalid']:
+    #         await self.drop_existing_table(feature_class_name)
+    #         raise ServicesError("The input shapefile has invalid geometries.")
+
     async def is_valid(self, feature_class_name):
-        query = f"SELECT DISTINCT ST_IsValid(geometry) FROM bioprotect.{feature_class_name} LIMIT 1;"
-        result = await self.execute(query, return_format="Array")
-        if not result[0]['st_isvalid']:
+        # Step 1: Attempt to auto-fix invalid geometries
+        await self.execute(f"""
+            UPDATE bioprotect.{feature_class_name}
+            SET geometry = ST_MakeValid(geometry)
+            WHERE NOT ST_IsValid(geometry);
+        """)
+
+        # Step 2: Check if any geometries are still invalid
+        invalids = await self.execute(f"""
+            SELECT ogc_fid, ST_IsValidReason(geometry) AS reason
+            FROM bioprotect.{feature_class_name}
+            WHERE NOT ST_IsValid(geometry)
+            LIMIT 10;
+        """, return_format="Array")
+
+        if invalids:
             await self.drop_existing_table(feature_class_name)
-            raise ServicesError("The input shapefile has invalid geometries.")
+            reasons = ", ".join(set([item["reason"] for item in invalids]))
+            raise ServicesError(
+                f"The shapefile contains invalid geometries: {reasons}")
 
     async def create_primary_key(self, feature_class_name, column):
         key_name = f"idx_{uuid.uuid4().hex}"

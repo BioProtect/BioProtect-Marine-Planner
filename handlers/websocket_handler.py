@@ -125,7 +125,10 @@ class SocketHandler(WebSocketHandler):
         try:
             self.write_message(message)
         except WebSocketClosedError:
-            self.close_connection()
+            logging.warning("WebSocket already closed while sending message.")
+            # Stop ping loop if it's still running
+            if hasattr(self, 'ping_callback') and self.ping_callback.is_running():
+                self.ping_callback.stop()
 
     def _send_ping(self):
         """Sends a ping to keep the WebSocket connection alive."""
@@ -137,7 +140,7 @@ class SocketHandler(WebSocketHandler):
 
     def close(self, close_message=None, clean=True):
         """Closes the WebSocket connection."""
-        if hasattr(self, 'ping_callback') and self.ping_callback.is_running:
+        if hasattr(self, 'ping_callback') and self.ping_callback.is_running():
             self.ping_callback.stop()
 
         if clean:

@@ -761,11 +761,16 @@ async def finish_feature_import(feature_class_name, name, description, source, u
             return_format="Array"
         )
 
-    except ServicesError as e:
+    except Exception as e:
         await pg.execute(sql.SQL("DROP TABLE IF EXISTS bioprotect.{};").format(sql.Identifier(feature_class_name)))
-        if "Database integrity error" in e.args[0]:
-            raise ServicesError(f"The feature '{name}' already exists.") from e
-        raise ServicesError(e.args[0]) from e
+
+        if isinstance(e, psycopg2.errors.UniqueViolation) or "already exists" in str(e):
+            raise ServicesError(
+                f"A feature with the name '{name}' already exists. Please choose a different name.")
+
+        logging.error(f"Unexpected error during metadata insert: {e}")
+        raise ServicesError(
+            "An unexpected error occurred while creating the feature.") from e
 
     return feature_id[0]
 
@@ -2061,11 +2066,13 @@ class uploadFileToFolder(BaseHandler):
             print('====================== dest_folder: ', dest_folder)
             # write the file to the server
             file_path = project_paths.PROJECT_FOLDER + dest_folder + os.sep + filename
-            print("==============================Writing file to:", file_path)
+            print("============================== Writing file to:", file_path)
             write_to_file(
                 file_path, self.request.files["value"][0]["body"], 'wb')
-            self.send_response(
-                {'info': f"File '{filename}' uploaded", 'file': filename})
+            self.send_response({
+                'info': f"File '{filename}' uploaded",
+                'file': filename
+            })
         except ServicesError as e:
             raise_error(self, e.args[0])
 
@@ -2151,9 +2158,9 @@ class getShapefileFieldnames(BaseHandler):
     def get(self):
         ogr.UseExceptions()
         try:
-            # validate the input arguments
             validate_args(self.request.arguments, ['filename'])
-            # get the field list
+
+            # load the shapefile
             shapefile = project_paths.IMPORT_FOLDER + \
                 self.get_argument('filename')
             data_source = ogr.Open(shapefile)
@@ -2162,12 +2169,22 @@ class getShapefileFieldnames(BaseHandler):
 
             layer = data_source.GetLayer(0)
             layer_definition = layer.GetLayerDefn()
+
             fields = [layer_definition.GetFieldDefn(x).GetName(
             ) for x in range(layer_definition.GetFieldCount())]
 
+            values = []
+            layer.ResetReading()
+            for i, value in enumerate(layer):
+                if i >= 30:
+                    break
+                row = {field: value.GetField(field) for field in fields}
+                values.append(row)
+            print('******************* values: ', values)
+
             # set the response
             self.send_response(
-                {'info': "Field list returned", 'fieldnames': fields})
+                {'info': "Field list returned", 'fieldnames': fields, 'values': values})
         except ServicesError as e:
             raise_error(self, e.args[0])
 
@@ -2667,7 +2684,8 @@ class runMarxan(SocketHandler):
                                     'project': self.project, 'user': self.user})
             else:
                 self.close({'info': 'Run completed',
-                            'project': self.project, 'user': self.user})
+                            'project': self.project,
+                            'user': self.user})
         except ServicesError as e:
             self.close({'error': e.args[0]})
 
@@ -2696,22 +2714,15 @@ class importFeatures(SocketHandler):
 
     async def open(self):
         try:
-            print("WebSocket opened")
-            print("Headers:", self.request.headers)
-            print("Arguments:", self.request.arguments)
             await super().open({'info': "Importing features.."})
 
         except ServicesError:  # authentication/authorisation error
-            print("///////////////////////////////// services/authentication error.")
             pass
         else:
             # validate the input arguments
             validate_args(self.request.arguments, ['shapefile'])
-            print('========================= self.request.arguments: ',
-                  self.request.arguments)
             # get the name of the shapefile that has already been unzipped on the server
             shapefile = self.get_argument('shapefile')
-            print('///////////////// shapefile: ', shapefile)
             # if a name is passed then this is a single feature class
             if "name" in list(self.request.arguments.keys()):
                 name = self.get_argument('name')
@@ -2720,7 +2731,6 @@ class importFeatures(SocketHandler):
             try:
                 # get a scratch name for the import
                 scratch_name = get_unique_feature_name("scratch_")
-                print('/////////// scratch_name: ', scratch_name)
                 # first, import the shapefile into a PostGIS feature class in EPSG:4326
                 await pg.import_shapefile(project_paths.IMPORT_FOLDER, shapefile, scratch_name)
                 # check the geometry
@@ -2728,8 +2738,8 @@ class importFeatures(SocketHandler):
                     'status': 'Preprocessing',
                     'info': "Checking the geometry.."
                 })
-                print("//////// should have imported shapefile")
                 await pg.is_valid(scratch_name)
+
                 # get the feature names
                 if name:  # single feature name
                     feature_names = [name]
@@ -2802,20 +2812,19 @@ class importFeatures(SocketHandler):
                 # complete
                 self.close({'info': "Features imported"})
 
-            except (ServicesError) as e:
-                if "already exists" in e.args[0]:
-                    self.close({'error': "The feature '" + feature_name +
-                               "' already exists", 'info': 'Failed to import features'})
-                else:
-                    self.close({
-                        'info': 'Failed to import features',
-                        'error': e.args[0]
-                    })
+            except ServicesError as e:
+                self.send_response({
+                    'status': 'Finished',
+                    'error': str(e),
+                    'info': 'Failed to import features'
+                })
+                self.close(clean=False)
             finally:
                 # delete the scratch feature class
                 if scratch_name:
                     query = f'DROP TABLE IF EXISTS bioprotect."{scratch_name}"'
                     await pg.execute(query)
+
 
 # imports an item from GBIF
 
