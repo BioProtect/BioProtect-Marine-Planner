@@ -14,7 +14,6 @@ from services.file_service import (check_zipped_shapefile,
 from services.project_service import set_folder_paths, write_csv
 from services.service_error import ServicesError, raise_error
 from handlers.base_handler import BaseHandler
-from services.queries import get_pu_grids_query
 
 
 class PlanningUnitHandler(BaseHandler):
@@ -153,7 +152,10 @@ class PlanningUnitHandler(BaseHandler):
 
     async def get_planning_unit_grids(self):
         print("Retrieving planning unit grids....................")
-        planning_unit_grids = await self.pg.execute(get_pu_grids_query, return_format="Dict")
+        # bioprotect.get_pu_grids() is a POSTGIS function (functions table in the databse) that retrieves planning unit grids
+        planning_unit_grids = await self.pg.execute("SELECT * FROM bioprotect.get_pu_grids();", return_format="Array")
+        print('planning_unit_grids: ', planning_unit_grids)
+
         self.send_response({
             'info': 'Planning unit grids retrieved',
             'planning_unit_grids': planning_unit_grids

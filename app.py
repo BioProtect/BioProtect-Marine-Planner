@@ -1117,10 +1117,8 @@ class AuthHandler(BaseHandler):
                         "refresh_token"), algorithms=["HS256"])
                     if datetime.fromtimestamp(decoded_token["exp"]) > now:
                         valid_refresh_tokens.append(token)
-                except jwt.ExpiredSignatureError:
-                    continue  # Ignore expired tokens
-                except jwt.InvalidTokenError:
-                    continue  # Ignore invalid tokens
+                except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+                    continue
 
             # Generate tokens
             access_token = jwt.encode({
@@ -1143,7 +1141,6 @@ class AuthHandler(BaseHandler):
             self.set_signed_cookie("user", username)
             self.set_signed_cookie("user_id", str(user['id']))
             self.set_signed_cookie("role", user['role'])
-
             self.set_cookie("jwt", refresh_token, httponly=True,
                             secure=True, samesite="None")
 
@@ -1161,19 +1158,24 @@ class AuthHandler(BaseHandler):
             # set folder paths for user when they login
             set_user_folder_paths(self, username, project_result)
 
+            # Select the last accessed project if it exists
+            last_project_id = user.get("last_project")
+            selected_project = next(
+                (p for p in project_result if p["id"] == last_project_id),
+                project_result[0] if project_result else None
+            )
+
             # Respond with access token and user data
             self.send_response({
                 "userId": user['id'],
                 "accessToken": access_token,
                 "userData": user,
-                "project": project_result[0],
+                "project": selected_project,
                 # Send user data along with authentication
                 # "dismissedNotification": notifications
             })
         except ServicesError as e:
             raise_error(self, e.args[0])
-
-        # end try
 
 
 class getCountries(BaseHandler):
@@ -4194,7 +4196,7 @@ def getPressuresActivitiesDatabase(padfile_path):
         pad.columns = pad.columns.str.lower()
         pad["rppscore"] = np.where(
             pad['rpptitle'] == 'low', 0.3, 1)
-        pad.to_sql('pad', con=engine, schema='marxan', if_exists='replace')
+        pad.to_sql('pad', con=engine, schema='bioprotect', if_exists='replace')
     return pad
 
 
@@ -4242,6 +4244,12 @@ class GetAtlasLayersHandler(BaseHandler):
 
 
 class GetActivitiesHandler(BaseHandler):
+    """_summary_
+
+    Args:
+        BaseHandler (_type_): _description_
+    """
+
     async def get(self):
 
         pad = getPressuresActivitiesDatabase(db_config.db_config.get('pad'))

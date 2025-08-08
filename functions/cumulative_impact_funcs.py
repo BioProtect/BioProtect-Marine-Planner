@@ -93,25 +93,6 @@ def close():
     conn.close()
 
 
-def shape_to_hex():
-    data = cur.execute(
-        """
-            SELECT impact.hex_grid(
-				CAST( ST_Area(case_study.geom) AS DOUBLE PRECISION),
-                CAST(ST_XMin(ST_TRANSFORM(case_study.geom,100026)) AS DOUBLE PRECISION),
-                CAST(ST_YMin(ST_TRANSFORM(case_study.geom,100026)) AS DOUBLE PRECISION),
-                CAST(ST_XMax(ST_TRANSFORM(case_study.geom,100026)) AS DOUBLE PRECISION),
-                CAST(ST_YMax(ST_TRANSFORM(case_study.geom,100026)) AS DOUBLE PRECISION)
-            )
-            FROM
-            (SELECT * FROM impact.case_studies WHERE gid=12) AS case_study
-        """
-    )
-    res = data.fetchone()
-    print('res: ', res)
-    return
-
-
 def postgis_to_shape(table_name, filename):
     sql = "select * from bioprotect.%s;" % table_name
     df = gpd.read_postgis(sql, conn, geom_col='geometry')

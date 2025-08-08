@@ -19,7 +19,6 @@ from services.file_service import (get_key_value, get_keys,
 from services.project_service import clone_a_project, get_project_data, set_folder_paths
 from services.service_error import ServicesError, raise_error
 from services.user_service import get_users
-from services.queries import get_pu_grids_query
 
 
 class ProjectHandler(BaseHandler):
@@ -481,6 +480,7 @@ class ProjectHandler(BaseHandler):
             data=[project_id],
             return_format="Dict"
         )
+
         metadata["description"] = project["description"]
         metadata["createdate"] = project["date_created"]
         metadata["pu_id"] = project["planning_unit_id"]
@@ -564,7 +564,8 @@ class ProjectHandler(BaseHandler):
             })
 
         df = pd.DataFrame(projects).set_index("feature_class_name")
-        grids = await self.pg.execute(get_pu_grids_query, return_format="Dict")
+        grids = await self.pg.execute("SELECT * FROM bioprotect.get_pu_grids();", return_format="Dict")
+
         df2 = pd.DataFrame(grids).set_index("feature_class_name")
         df = df.join(df2).replace({pd.NA: None})
 
