@@ -1991,7 +1991,8 @@ class uploadFileToFolder(BaseHandler):
                 file_path, self.request.files["value"][0]["body"], 'wb')
             self.send_response({
                 'info': f"File '{filename}' uploaded",
-                'file': filename
+                'file': filename,
+                'file_path': file_path
             })
         except ServicesError as e:
             raise_error(self, e.args[0])

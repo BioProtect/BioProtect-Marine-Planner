@@ -43,8 +43,10 @@ class PlanningGridWebSocketHandler(SocketHandler):
         try:
             # Parse incoming message
             data = json.loads(message)
+            print('data: ', data)
 
             shapefile_path = data.get('shapefile_path')
+            print('shapefile_path: ', shapefile_path)
             alias = data.get('alias')
             description = data.get('description')
             resolution = int(data.get('resolution', 7))  # fallback if missing
@@ -61,25 +63,33 @@ class PlanningGridWebSocketHandler(SocketHandler):
             self.send_response({'info': "📦 Reading shapefile..."})
             df = gpd.read_file(shapefile_path)
 
-            records = []
+            unique_cells = set()
             for _, row in df.iterrows():
+                self.send_response(
+                    {'info': "📦 looping through shapefile rows..."})
                 geom = row["geometry"]
                 parts = [geom] if geom.geom_type == "Polygon" else list(
                     geom.geoms)
                 for part in parts:
                     self.send_response({'info': "📦 parsing geometries..."})
-                    for h in h3.geo_to_cells(part.__geo_interface__, resolution):
-                        coords = [(lon, lat)
-                                  for lat, lon in h3.cell_to_boundary(h)]
-                        records.append({
-                            "h3_index": h,
-                            "resolution": resolution,
-                            "scale_level": scale_level,
-                            "project_area": project_area_name,
-                            "geometry": Polygon(coords),
-                            "cost": 1.0,
-                            "status": 0
-                        })
+                    unique_cells |= set(h3.geo_to_cells(
+                        part.__geo_interface__, resolution))
+
+            records = []
+            self.send_response({'info': "📦 Building records for db..."})
+            for h in unique_cells:
+
+                coords = [(lon, lat)
+                          for lat, lon in h3.cell_to_boundary(h)]
+                records.append({
+                    "h3_index": h,
+                    "resolution": resolution,
+                    "scale_level": scale_level,
+                    "project_area": project_area_name,
+                    "geometry": Polygon(coords),
+                    "cost": 1.0,
+                    "status": 0
+                })
 
             self.send_response(
                 {'info': f"🧱 Generated {len(records)} H3 records"})
@@ -90,6 +100,13 @@ class PlanningGridWebSocketHandler(SocketHandler):
             engine = self.create_sql_engine()
 
             self.send_response({'info': "📤 Writing H3 cells to database..."})
+            await self.pg.execute(
+                """
+                DELETE FROM bioprotect.h3_cells
+                WHERE project_area = %s AND resolution = %s
+                """,
+                [project_area_name, resolution]
+            )
             gdf_out.to_postgis(
                 "h3_cells", engine, schema="bioprotect", if_exists="append", index=False)
 
@@ -151,10 +168,10 @@ class PlanningGridWebSocketHandler(SocketHandler):
             })
             # You can optionally clean up here
             await self.pg.execute(
-                text(
-                    "DELETE FROM bioprotect.metadata_planning_units WHERE feature_class_name = :name"),
-                {"name": view_name}
+                "DELETE FROM bioprotect.metadata_planning_units WHERE feature_class_name = %s",
+                [view_name]
             )
             await self.pg.execute(
-                text(f"DROP VIEW IF EXISTS bioprotect.{view_name} CASCADE")
+                sql.SQL("DROP VIEW IF EXISTS bioprotect.{} CASCADE").format(
+                    sql.Identifier(view_name))
             )
