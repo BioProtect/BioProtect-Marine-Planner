@@ -17,11 +17,10 @@ class FeatureHandler(BaseHandler):
     fetching, and listing projects for a feature.
     """
 
-    def initialize(self, pg, finish_feature_import, upload_tileset_to_mapbox):
+    def initialize(self, pg, finish_feature_import):
         super().initialize()
         self.pg = pg
         self.finish_feature_import = finish_feature_import
-        self.upload_tileset_to_mapbox = upload_tileset_to_mapbox
 
     def validate_args(self, args, required_keys):
         # sourcery skip: use-named-expression
@@ -165,13 +164,11 @@ class FeatureHandler(BaseHandler):
 
         await self.pg.execute(create_table_query, [linestring])
         feature_id = await self.finish_feature_import(feature_class_name, name, description, "Drawn on screen", user)
-        upload_id = await self.upload_tileset_to_mapbox(feature_class_name, feature_class_name)
 
         self.send_response({
             'info': f"Feature '{name}' created",
             'id': feature_id,
             'feature_class_name': feature_class_name,
-            'uploadId': upload_id
         })
 
     async def get_feature_planning_units(self):

@@ -1,6 +1,7 @@
 import datetime
 import logging
 import traceback
+import json
 from urllib.parse import urlparse
 
 from classes.folder_path_config import get_folder_path_config
@@ -49,6 +50,8 @@ class SocketHandler(WebSocketHandler):
         print("================== websocket open method")
         try:
             self.start_time = datetime.datetime.now()
+            if not isinstance(start_message, dict):
+                start_message = {"message": str(start_message)}
             start_message.update({'status': 'Started'})
             self.send_response(start_message)
 
@@ -111,9 +114,16 @@ class SocketHandler(WebSocketHandler):
         #             403, f"User '{self.current_user}' cannot access projects of other users.")
 
     def send_response(self, message):
+
+        # tolerate string input, but prefer dict everywhere
+        if isinstance(message, str):
+            try:
+                message = json.loads(message)
+            except Exception:
+                message = {"info": message}
+
         """Sends a response to the client with metadata."""
-        elapsed_time = f"{
-            (datetime.datetime.now() - self.start_time).seconds}s"
+        elapsed_time = f"{(datetime.datetime.now() - self.start_time).seconds}s"
         message.update({'elapsedtime': elapsed_time})
 
         if "user" in self.request.arguments:

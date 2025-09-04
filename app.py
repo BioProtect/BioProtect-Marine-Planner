@@ -1,36 +1,29 @@
 import asyncio
-import ctypes
 import datetime
-import fnmatch
 import glob
-import io
 import json
 import logging
 import os
 import platform
-import re
 import shlex
 import shutil
 import signal
 import subprocess
 import sys
 import time
-import traceback
-import urllib
 import uuid
 import webbrowser
 import xml.etree.ElementTree as ET
 import zipfile
 from collections import OrderedDict
-from subprocess import PIPE, CalledProcessError, Popen
+from datetime import datetime, timedelta, timezone
+from subprocess import PIPE, Popen
 from threading import Thread
 from urllib import request
 from urllib.parse import urlparse
-import shlex
-import inspect
 
 import colorama
-import geopandas as gpd
+import jwt
 import numpy as np
 import pandas as pd
 import psutil
@@ -41,56 +34,50 @@ import tornado.options
 from classes.db_config import DBConfig
 from classes.folder_path_config import get_folder_path_config
 from classes.postgis_class import get_pg
-from colorama import Back, Fore, Style
+from colorama import Fore, Style
 from functions.utils import (create_cost_from_impact, cumul_impact,
-                             get_tif_list, pad_dict, reproject_raster,
-                             replace_chars, reproject_and_normalise_upload,
-                             reproject_raster, reproject_raster_to_all_habs,
-                             reproject_shape, wgs84)
-from mapbox import Uploader, errors
+                             get_tif_list, pad_dict, replace_chars,
+                             reproject_and_normalise_upload, reproject_raster,
+                             reproject_raster_to_all_habs)
+from handlers.base_handler import BaseHandler
+from handlers.feature_handler import FeatureHandler
+from handlers.planning_unit_handler import PlanningUnitHandler
+from handlers.planning_unit_websocket_handler import \
+    PlanningGridWebSocketHandler
+from handlers.project_handler import ProjectHandler
+from handlers.user_handler import UserHandler
+from handlers.websocket_handler import SocketHandler
+from mapbox import Uploader
 from osgeo import ogr
+from passlib.hash import bcrypt
 from psycopg2 import sql
 from rasterio.io import MemoryFile
 from services.file_service import (add_parameter_to_file,
-                                   check_zipped_shapefile, create_zipfile,
-                                   delete_all_files,
+                                   check_zipped_shapefile, delete_all_files,
                                    delete_records_in_text_file,
-                                   delete_zipped_shapefile, get_dict_value,
-                                   get_files_in_folder,
-                                   get_key_values_from_file,
-                                   get_output_file, read_file, unzip_file,
-                                   unzip_shapefile, update_file_parameters,
-                                   write_df_to_file, write_to_file, zip_folder)
+                                   delete_zipped_shapefile, get_files_in_folder,
+                                   get_output_file,
+                                   read_file, unzip_file, unzip_shapefile,
+                                   update_file_parameters, write_df_to_file,
+                                   write_to_file, zip_folder)
 from services.project_service import (get_project_data,
-                                      get_projects_for_feature,
                                       get_safe_project_name, set_folder_paths,
                                       write_csv)
 from services.run_command_service import run_command
 from services.service_error import ServicesError, raise_error
-from services.user_service import (
-    get_notifications_data, dismiss_notification, get_users, reset_notifications)
-from handlers.base_handler import BaseHandler
-from handlers.user_handler import UserHandler
-from handlers.project_handler import ProjectHandler
-from handlers.feature_handler import FeatureHandler
-from handlers.websocket_handler import SocketHandler
-from handlers.planning_unit_handler import PlanningUnitHandler
+from services.user_service import (dismiss_notification,
+                                   get_users,
+                                   reset_notifications)
 from sqlalchemy import create_engine, exc
-from tornado import concurrent, gen, httpclient, queues
-from tornado.ioloop import IOLoop, PeriodicCallback
+from tornado import gen, httpclient, queues
+from tornado.escape import json_decode
+from tornado.httpclient import AsyncHTTPClient, HTTPRequest
+from tornado.ioloop import IOLoop
 from tornado.iostream import StreamClosedError
 from tornado.log import LogFormatter
 from tornado.platform.asyncio import AnyThreadEventLoopPolicy
 from tornado.process import Subprocess
 from tornado.web import HTTPError, StaticFileHandler
-from tornado.websocket import WebSocketClosedError
-from tornado.escape import json_decode
-from tornado.httpclient import AsyncHTTPClient, HTTPRequest
-from passlib.hash import bcrypt
-import jwt
-import os
-from datetime import datetime, timezone, timedelta
-
 
 ####################################################################################################################################################################################################################################################################
 # constant declarations
@@ -101,7 +88,7 @@ PERMITTED_METHODS = ["getServerData", "testTornado",
                      "getProjectsWithGrids", "getAtlasLayers"]
 """REST services that do not need authentication/authorisation."""
 ROLE_UNAUTHORISED_METHODS = {
-    "ReadOnly": ["createProject", "upgradeProject", "getCountries", "createPlanningUnitGrid", "uploadTilesetToMapBox", "uploadFileToFolder", "uploadFile", "importPlanningUnitGrid", "createFeaturePreprocessingFileFromImport", "importFeatures", "updatePUFile", "updateSpecFile", "getMarxanLog", "PreprocessFeature", "preprocessPlanningUnits", "preprocessProtectedAreas", "runMarxan", "stopProcess", "testRoleAuthorisation", "getRunLogs", "clearRunLogs", "updateWDPA", "unzipShapefile", "getShapefileFieldnames", "runGapAnalysis", "importGBIFData", "deleteGapAnalysis", "shutdown", "addParameter", "resetDatabase", "cleanup", "exportProject", "importProject", 'updateCosts', 'deleteCost', 'runSQLFile'],
+    "ReadOnly": ["createProject", "upgradeProject", "getCountries", "createPlanningUnitGrid", "uploadFileToFolder", "uploadFile", "importPlanningUnitGrid", "createFeaturePreprocessingFileFromImport", "importFeatures", "updatePUFile", "updateSpecFile", "getMarxanLog", "PreprocessFeature", "preprocessPlanningUnits", "preprocessProtectedAreas", "runMarxan", "stopProcess", "testRoleAuthorisation", "getRunLogs", "clearRunLogs", "updateWDPA", "unzipShapefile", "getShapefileFieldnames", "runGapAnalysis", "importGBIFData", "deleteGapAnalysis", "shutdown", "addParameter", "resetDatabase", "cleanup", "exportProject", "importProject", 'updateCosts', 'deleteCost', 'runSQLFile'],
     "User": ["testRoleAuthorisation", "clearRunLogs", "updateWDPA", "shutdown", "addParameter", "resetDatabase", "cleanup", 'runSQLFile'],
     "Admin": []
 }
@@ -152,7 +139,7 @@ LOGGING_LEVEL = logging.INFO
 # pdoc3 dict to whitelist private members for the documentation
 __pdoc__ = {}
 privateMembers = ['get_geometry_type', 'add_parameter_to_file', 'check_zipped_shapefile', 'cleanup', 'clone_project', 'create_user', 'create_zipfile', 'delete_all_files', 'delete_archive_files', '_deleteFeature',  'delete_records_in_text_file', 'del_tileset', 'delete_zipped_shapefile', 'dismiss_notification',  'finish_feature_import', '_getAllProjects', 'get_dict_value', 'get_files_in_folder',   'get_key_value', 'get_keys', 'get_marxan_log', 'get_notifications_data', 'get_output_file', 'get_project_data', 'get_projects_for_feature', 'get_projects_for_user', 'get_run_logs',
-                  'get_safe_project_name', 'get_species_data', 'get_unique_feature_name', 'get_user_data', 'get_users', 'get_users_data', 'normalize_dataframe', 'pad_dict', '_preprocessProtectedAreas', 'puid_array_to_df', 'raise_error', 'read_file', '_reprocessProtectedAreas', 'reset_notifications', 'run_command', '_setCORS', 'set_folder_paths', 'set_global_vars', 'unzip_file', 'unzip_shapefile', 'update_dataframe', 'update_file_parameters', 'update_run_log', 'update_species_file', '_uploadTileset', 'upload_tileset_to_mapbox', 'validate_args', 'write_csv', 'write_to_file', 'write_df_to_file', 'zip_folder']
+                  'get_safe_project_name', 'get_species_data', 'get_unique_feature_name', 'get_user_data', 'get_users', 'get_users_data', 'normalize_dataframe', 'pad_dict', '_preprocessProtectedAreas', 'puid_array_to_df', 'raise_error', 'read_file', '_reprocessProtectedAreas', 'reset_notifications', 'run_command', '_setCORS', 'set_folder_paths', 'set_global_vars', 'unzip_file', 'unzip_shapefile', 'update_dataframe', 'update_file_parameters', 'update_run_log', 'update_species_file', '_uploadTileset', 'validate_args', 'write_csv', 'write_to_file', 'write_df_to_file', 'zip_folder']
 
 for m in privateMembers:
     __pdoc__[m] = True
@@ -580,47 +567,6 @@ def validate_args(arguments, req_arguments):
             f"Missing input arguments: {', '.join(missing_args)}")
     print("Args validated... ", Fore.CYAN)
     return
-
-
-async def upload_tileset_to_mapbox(feature_class_name, mapbox_layer_name=None):
-    """
-    Exports a feature class to Mapbox as a new tileset.
-
-    Args:
-        feature_class_name (str): The name of the feature class to export, zip, and upload.
-                                 Must exist in the PostGIS database.
-        mapbox_layer_name (str, optional): The name of the Mapbox layer to be created (currently not used).
-
-    Returns:
-        str: The upload ID of the job, or "0" if the tileset already exists.
-    """
-    # Check if the tileset already exists
-    url = f"https://api.mapbox.com/tilesets/v1/{MAPBOX_USER}.{
-        feature_class_name}?access_token={project_paths.MBAT}"
-    try:
-        response = requests.get(url)
-        if response.status_code == 200:
-            return "0"
-    except requests.RequestException as e:
-        # Log or handle the exception as needed
-        print(f"Error checking tileset existence: {e}")
-        return "0"
-
-    # Export and zip the shapefile for uploading to Mapbox
-    folder = project_paths.EXPORT_FOLDER
-    await pg.exportToShapefile(folder, feature_class_name, tEpsgCode="EPSG:3857")
-    zipfilename = create_zipfile(folder, feature_class_name)
-
-    try:
-        # Upload the tileset to Mapbox
-        upload_id = upload_tileset(zipfilename, feature_class_name)
-        return upload_id
-    finally:
-        # Clean up the temporary shapefile and zip file
-        delete_zipped_shapefile(
-            project_paths.EXPORT_FOLDER, f"{
-                feature_class_name}.zip", feature_class_name
-        )
 
 
 def upload_tileset(filename, tileset_name):
@@ -2011,34 +1957,6 @@ class listProjectsForPlanningGrid(BaseHandler):
             # set the response for uploading to mapbox
             self.send_response(
                 {'info': "Projects info returned", "projects": projects})
-        except ServicesError as e:
-            raise_error(self, e.args[0])
-
-
-class uploadTilesetToMapBox(BaseHandler):
-    """REST HTTP handler. Uploads a feature class with the passed feature class name to MapBox as a tileset using the MapBox Uploads API. The required arguments in the request.arguments parameter are:
-
-    Args:
-        feature_class_name (string): The name of the feature class to upload.
-        mapbox_layer_name (string): The name of the destination Mapbox tileset.
-    Returns:
-        A dict with the following structure (if the class raises an exception, the error message is included in an 'error' key/value pair):
-
-        {
-            "info": Informational message,
-            "uploadid": The Mapbox tileset upload id
-        }
-    """
-
-    async def get(self):
-        try:
-            # validate the input arguments
-            validate_args(self.request.arguments, [
-                'feature_class_name', 'mapbox_layer_name'])
-            uploadId = await upload_tileset_to_mapbox(self.get_argument('feature_class_name'), self.get_argument('mapbox_layer_name'))
-            # set the response for uploading to mapbox
-            self.send_response({'info': "Tileset '" + self.get_argument(
-                'feature_class_name') + "' uploading", 'uploadid': uploadId})
         except ServicesError as e:
             raise_error(self, e.args[0])
 
@@ -3771,87 +3689,6 @@ class preprocessPlanningUnits(QueryWebSocketHandler):
             # set the response
             self.close({'info': 'Boundary lengths calculated'})
 
-# wss://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/createPlanningUnitGrid?iso3=AND&domain=Terrestrial&areakm2=50&shape=hexagon
-
-
-class createPlanningUnitGrid(QueryWebSocketHandler):
-    """REST WebSocket Handler. Creates a new planning grid. Sends an error if the planning grid already exists. The required arguments in the request.arguments parameter are:
-
-    Args:
-        iso3 (string): The country iso3 3-letter code.
-        domain (string): The domain for the planning grid. One of marine or terrestrial.
-        areakm2 (string): The area of the planning grid in Km2.
-        shape (string): The shape of the planning grid units. One of square or hexagon.
-    Returns:
-        WebSocket dict messages with one or more of the following keys (if the class raises an exception, the error message is included in an 'error' key/value pair):
-
-        {
-            "info": Informational message,
-            "elapsedtime": The elapsed time in seconds of the run,
-            "status": One of Preprocessing or Finished,
-            "feature_class_name": The name of the feature class created,
-            "alias": The alias of the planning grid created,
-            "uploadId": The Mapbox tileset upload id
-        }
-    """
-
-    async def open(self):
-        try:
-            await super().open({'info': "Creating planning grid.."})
-        except ServicesError:  # authentication/authorisation error
-            pass
-        else:
-            validate_args(self.request.arguments,
-                          ['iso3', 'domain', 'areakm2', 'shape'])
-            area_km2 = self.get_argument('areakm2')
-            iso3 = self.get_argument('iso3')
-            domain = self.get_argument('domain')
-            shape = self.get_argument('shape')
-            # get the feature class name
-            fc = f"pu_{iso3.lower()}_{domain.lower()}_{shape.lower()}_{areakm2}"
-
-            # see if the planning grid already exists
-            records = await pg.execute(
-                "SELECT * FROM bioprotect.metadata_planning_units WHERE feature_class_name =(%s);",
-                data=[fc],
-                return_format="Array")
-            if len(records):
-                self.close({'error': "That item already exists"})
-            else:
-                # estimate how many planning units are in the grid that will be created
-                table = "bioprotect.gaul_2015_simplified_1km" if domain.lower(
-                ) == 'terrestrial' else "bioprotect.eez_simplified_1km"
-
-                # Execute the query to estimate the planning unit count
-                query = f"""
-                    SELECT ST_Area(ST_Transform(wkb_geometry, 3410)) / (%s * 1000000)
-                    FROM {table}
-                    WHERE iso3 = %s;
-                """
-                result = await pg.execute(query, data=[area_km2, iso3], return_format="Array")
-
-                # Return the count from the query result
-                unitCount = result[0][0]
-
-                # see if the unit count is above the project_paths.PLANNING_GRID_UNITS_LIMIT
-                if (int(unitCount) > project_paths.PLANNING_GRID_UNITS_LIMIT):
-                    self.close({'error': "Number of planning units &gt; " + str(
-                        project_paths.PLANNING_GRID_UNITS_LIMIT) + " (=" + str(int(unitCount)) + ")."})
-                else:
-                    results = await self.executeQuery("SELECT * FROM bioprotect.planning_grid(%s,%s,%s,%s,%s);", [area_km2, iso3, domain, shape, self.get_current_user()], return_format="Array")
-                    if results:
-                        # get the planning grid alias
-                        alias = results[0][0]
-                        # create a primary key so the feature class can be used in ArcGIS
-                        # await pg.createPrimaryKey(fc, "puid")
-                        # start the upload to Mapbox
-                        uploadId = await upload_tileset_to_mapbox(fc, fc)
-                        # set the response
-                        self.close({'info': "Planning grid '" + alias + "' created",
-                                    'feature_class_name': fc,
-                                    'alias': alias,
-                                    'uploadId': uploadId})
-
 # wss://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/runGapAnalysis?user=admin&project=British%20Columbia%20Marine%20Case%20Study
 
 
@@ -4447,13 +4284,14 @@ class SaveRasterHandler(SocketHandler):
             data_array = None
             try:
                 query = sql.SQL("""
-                    INSERT INTO bioprotect.metadata_activities 
-                    (creation_date, description, source, created_by, filename, activity, activity_name, extent)
+                    INSERT INTO bioprotect.metadata_activities
+                    (creation_date, description, source, created_by,
+                     filename, activity, activity_name, extent)
                     SELECT
-                        now(), %s, %s, %s, %s, %s, %s, rast.extent 
+                        now(), %s, %s, %s, %s, %s, %s, rast.extent
                     FROM
                         (SELECT Box2D(ST_Envelope(rast)) extent
-                    FROM 
+                    FROM
                         (SELECT rid, rast FROM bioprotect.{}) as rast2 ) as rast
                     RETURNING id""").format(sql.Identifier(activity_name))
 
@@ -4665,82 +4503,6 @@ def add_shapefile_to_db(filename, gridname, tablename):
         print("Pass in the location of the file as a string, not anything else....")
         return False
 
-
-class createMarinePlanningUnitGridHandler(QueryWebSocketHandler):
-    """REST WebSocket Handler. Creates a new planning grid. Sends an error if the planning grid already exists. The required arguments in the request.arguments parameter are:
-
-    Args:
-        areakm2 (string): The area of the planning grid in Km2.
-        shape (string): The shape of the planning grid units. One of square or hexagon.
-    Returns:
-        WebSocket dict messages with one or more of the following keys (if the class raises an exception, the error message is included in an 'error' key/value pair):
-
-        {
-            "info": Informational message,
-            "elapsedtime": The elapsed time in seconds of the run,
-            "status": One of Preprocessing or Finished,
-            "feature_class_name": The name of the feature class created,
-            "alias": The alias of the planning grid created,
-            "uploadId": The Mapbox tileset upload id
-        }
-    """
-
-    async def open(self):
-        try:
-            await super().open({'info': "Creating marine planning grid from shapefile.."})
-        except ServicesError:  # authentication/authorisation error
-            pass
-        else:
-            # validate args, set feature class name, see if grid already exists
-            validate_args(self.request.arguments,
-                          ['filename', 'planningGridName', 'areakm2', 'shape'])
-            areakm2 = self.get_argument('areakm2')
-            filename = self.get_argument('filename')
-            gridname = self.get_argument('planningGridName')
-            shape = self.get_argument('shape')
-            fc = "pu_" + gridname + "_marine_" + shape.lower() + "_" + areakm2
-            records = await pg.execute(
-                "SELECT * FROM bioprotect.metadata_planning_units WHERE feature_class_name =(%s);",
-                data=[fc],
-                return_format="Array")
-            if len(records):
-                self.close({'error': "That item already exists"})
-            else:
-                # REPROJECT THE SHAPEFILE
-                # unzip the shapefile and get the name of the shapefile without an extension, e.g. PlanningUnitsData.zip -> planningunits.shp -> planningunits
-                rootfilename = await IOLoop.current().run_in_executor(None,
-                                                                      unzip_shapefile,
-                                                                      'data/tmp/',
-                                                                      filename)
-                check_zipped_shapefile('data/tmp/'+filename)
-                repro_file = 'data/tmp/reprojected_'+rootfilename+'.shp'
-                reproject_shape('data/tmp/'+rootfilename +
-                                '.shp', repro_file, 4326)
-                tablename = 'impact.'+fc
-                # ADD THE SHAPEFILE TO THE DB
-                try:
-                    add_shapefile_to_db(repro_file, gridname, tablename)
-                except ServicesError as e:
-                    print('Shapefile not uploaded: ', e)
-                    raise
-                # MAKE SURE SHAPEFILE IS IN CORRECT CRS
-                # UPLOAD SHAPEFILE TO DATABASE AND RETURN WHATS NEEDED
-                # THEN PROCEED WITH THE HEXING FUNCTION
-
-                results = await self.executeQuery("SELECT * FROM impact.planning_grid(%s,%s,%s,%s,%s);",
-                                                  [areakm2, tablename, fc, shape, self.get_current_user()])
-                print('results: ', results)
-                if results:
-                    # get the planning grid alias
-                    alias = results[0][0]
-                    # start the upload to Mapbox
-                    # uploadId = await upload_tileset_to_mapbox(fc, fc)
-                    # set the response
-                    self.close({'info': "Planning grid '" + alias + "' created",
-                                'feature_class_name': fc,
-                                'alias': alias,
-                                'uploadId': uploadId})
-
 # wss://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/runGapAnalysis?user=admin&project=British%20Columbia%20Marine%20Case%20Study
 
 # tornado functions
@@ -4780,8 +4542,7 @@ class Application(tornado.web.Application):
             ("/server/importProject", ImportProject),
             ("/server/users", UserHandler, dict(pg=pg, project_paths=project_paths)),
             ("/server/features", FeatureHandler, dict(pg=pg,
-                                                      finish_feature_import=finish_feature_import,
-                                                      upload_tileset_to_mapbox=upload_tileset_to_mapbox)),
+                                                      finish_feature_import=finish_feature_import)),
             ("/server/planning-units", PlanningUnitHandler, dict(pg=pg,
                                                                  upload_tileset=upload_tileset)),
 
@@ -4794,9 +4555,9 @@ class Application(tornado.web.Application):
             ("/server/importFeatures", importFeatures),
             ("/server/createFeaturesFromWFS", createFeaturesFromWFS),
             ("/server/deleteShapefile", deleteShapefile),
-            ("/server/createPlanningUnitGrid", createPlanningUnitGrid),  # websocket
-            ("/server/createMarinePlanningUnitGrid",
-             createMarinePlanningUnitGridHandler),  # websocket
+
+            ("/server/createPlanningUnitGrid",
+             PlanningGridWebSocketHandler, dict(pg=pg)),  # websocket
             ("/server/getPlanningUnitGrids", getPlanningUnitGrids),
             ("/server/importPlanningUnitGrid", ImportPlanningUnitGrid),
             ("/server/listProjectsForPlanningGrid", listProjectsForPlanningGrid),
@@ -4813,7 +4574,6 @@ class Application(tornado.web.Application):
             ("/server/getAllSpeciesData", getAllSpeciesData),
             ("/server/updateSpecFile", updateSpecFile),
 
-            ("/server/uploadTilesetToMapBox", uploadTilesetToMapBox),
             ("/server/uploadFileToFolder", uploadFileToFolder),
             ("/server/unzipShapefile", unzipShapefile),
             ("/server/getShapefileFieldnames", getShapefileFieldnames),

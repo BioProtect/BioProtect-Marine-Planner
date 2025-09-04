@@ -4,6 +4,8 @@ from os import sep
 from os.path import join, relpath
 
 import pandas as pd
+from classes.db_config import DBConfig
+from handlers.base_handler import BaseHandler
 from psycopg2 import sql
 from services.file_service import (check_zipped_shapefile,
                                    delete_zipped_shapefile, file_to_df,
@@ -13,7 +15,7 @@ from services.file_service import (check_zipped_shapefile,
                                    normalize_dataframe, unzip_shapefile)
 from services.project_service import set_folder_paths, write_csv
 from services.service_error import ServicesError, raise_error
-from handlers.base_handler import BaseHandler
+from sqlalchemy import create_engine
 
 
 class PlanningUnitHandler(BaseHandler):
@@ -39,6 +41,20 @@ class PlanningUnitHandler(BaseHandler):
         return [
             int(s) for s in arguments.get(arg_name, [b""])[0].decode("utf-8").split(",")
         ] if arg_name in arguments else []
+
+    @staticmethod
+    def normalize_name(name):
+        return name.lower().replace(" ", "_").replace("-", "_").replace("/", "_")
+
+    @staticmethod
+    def get_scale_level(res):
+        return "basin" if res <= 6 else "regional" if res == 7 else "local"
+
+    @staticmethod
+    def create_sql_engine():
+        config = DBConfig()
+        db_url = f"postgresql://{config.DATABASE_USER}:{config.DATABASE_PASSWORD}@{config.DATABASE_HOST}/{config.DATABASE_NAME}"
+        return create_engine(db_url)
 
     def get_projects_for_planning_grid(self, feature_class_name):
         user_folder = self.proj_paths.USERS_FOLDER
@@ -93,6 +109,8 @@ class PlanningUnitHandler(BaseHandler):
 
         except ServicesError as e:
             raise_error(self, e.args[0])
+
+    # GET FUNCTIONS ###############################################################
 
     async def delete_planning_unit_grid(self):
         self.validate_args(self.request.arguments, ['planning_grid_name'])
@@ -154,7 +172,6 @@ class PlanningUnitHandler(BaseHandler):
         print("Retrieving planning unit grids....................")
         # bioprotect.get_pu_grids() is a POSTGIS function (functions table in the databse) that retrieves planning unit grids
         planning_unit_grids = await self.pg.execute("SELECT * FROM bioprotect.get_pu_grids();", return_format="Array")
-        print('planning_unit_grids: ', planning_unit_grids)
 
         self.send_response({
             'info': 'Planning unit grids retrieved',
@@ -205,6 +222,7 @@ class PlanningUnitHandler(BaseHandler):
             }
         })
 
+    # POST FUNCTIONS ###############################################################
     async def update_pu_file(self):
         args = self.request.arguments
         self.validate_args(args, ['user', 'project'])

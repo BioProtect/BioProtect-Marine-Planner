@@ -1,24 +1,20 @@
-from datetime import datetime
 import fnmatch
-import glob
+import json
 import shutil
 import uuid
-import json
+from datetime import datetime
 from os import rename, sep, walk
-from os.path import basename, exists, join, normpath, splitext
-from types import SimpleNamespace
+from os.path import exists, join
 
 import pandas as pd
 from handlers.base_handler import BaseHandler
 from psycopg2 import sql
-from services.file_service import (get_key_value, get_keys,
-                                   copy_directory, delete_all_files,
-                                   file_to_df, get_key_values_from_file,
+from services.file_service import (delete_all_files, file_to_df,
+                                   get_key_values_from_file,
                                    normalize_dataframe, read_file,
                                    write_to_file)
-from services.project_service import clone_a_project, get_project_data, set_folder_paths
+from services.project_service import clone_a_project
 from services.service_error import ServicesError, raise_error
-from services.user_service import get_users
 
 
 class ProjectHandler(BaseHandler):
@@ -277,6 +273,7 @@ class ProjectHandler(BaseHandler):
     # }
 
     async def create_project(self):
+        print('self.request.arguments: ', self.request.arguments)
         self.validate_args(self.request.arguments, [
             'user', 'project', 'description', 'planning_grid_name', 'interest_features', 'target_values', 'spf_values'
         ])
