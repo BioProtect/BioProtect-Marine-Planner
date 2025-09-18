@@ -88,16 +88,6 @@ class UserHandler(BaseHandler):
         except ServicesError as e:
             raise_error(self, e.args[0])
 
-    def get_user_data(self, return_password=False):
-        user_data_path = join(self.folder_user, "user.dat")
-        user_data = get_key_values_from_file(user_data_path)
-
-        # Filter out the password unless requested
-        self.userData = (
-            user_data if return_password else {
-                key: value for key, value in user_data.items() if key != 'PASSWORD'}
-        )
-
     async def create_user(self):
         self.validate_args(self.request.arguments, [
                            "user", "password", "fullname", "email"])

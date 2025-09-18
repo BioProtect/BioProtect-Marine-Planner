@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from os import rename, sep, walk
 from os.path import exists, join
-
+import numpy as np
 import pandas as pd
 from handlers.base_handler import BaseHandler
 from psycopg2 import sql
@@ -23,11 +23,9 @@ class ProjectHandler(BaseHandler):
     fetching, and updating projects.
     """
 
-    def initialize(self, pg, get_species_data, update_species):
+    def initialize(self, pg):
         super().initialize()
         self.pg = pg
-        self.get_species_data = get_species_data
-        self.update_species = update_species
 
     def validate_args(self, args, required_keys):
         # sourcery skip: use-named-expression
@@ -51,27 +49,6 @@ class ProjectHandler(BaseHandler):
         result = await self.pg.execute(query, [project_id], return_format="Dict")
         return result[0] if result else None
 
-    async def create_project_folder(self, project_name, template_folder):
-        # project_path = join(self.folder_user, project_name)
-
-        # # Ensure the project does not already exist
-        # if exists(project_path):
-        #     raise ServicesError(f"The project '{project_name}' already exists")
-
-        # copy_directory(template_folder, project_path)
-        # # Update the folder paths for the new project in the handler object
-        # set_folder_paths(self, {
-        #     'user': [self.user.encode("utf-8")],
-        #     'project': [project_name.encode("utf-8")]
-        # })
-        await self.pg.execute(
-            """
-            INSERT INTO bioprotect.projects (user_id, name, description, planning_unit_id, ...)
-            VALUES (%s, %s, %s, %s, ...)
-            """,
-            [user_id, project_name, description, planning_unit_id]
-        )
-
     def update_file_parameters(self, filename, new_params):
         """
         Updates specific parameters in a file. Parameters matching the keys in `new_params`
@@ -94,6 +71,54 @@ class ProjectHandler(BaseHandler):
         # Write the updated content back to the file
         write_to_file(filename, "\n".join(updated_lines))
 
+    async def get_species_data(self, obj):
+        """
+        Retrieves species data for a project from the Marxan SPECNAME file as a DataFrame.
+        Joins this data with the PostGIS database if the project is a Marxan Web project.
+        Sets the resulting data on the `speciesData` attribute of the passed `obj`.
+
+        Args:
+            obj (BaseHandler): The request handler instance.
+
+        Returns:
+            None
+        """
+
+        project_id = obj.projectData["project"]["id"]
+
+        # Load project_features (targets + spf)
+        species_data = await obj.pg.execute("""
+            SELECT
+                pf.feature_unique_id AS id,
+                pf.target_type,
+                pf.target_value,
+                pf.spf,
+                pf.weight,
+                pf.created_at,
+                pf.updated_at
+            FROM bioprotect.project_features pf
+            WHERE pf.project_id = %s
+        """, data=[project_id], return_format="DataFrame")
+
+        if species_data.empty:
+            obj.speciesData = pd.DataFrame()
+            return
+
+        # Get additional feature metadata from PostGIS
+        feature_data = await obj.pg.execute(
+            "SELECT * FROM bioprotect.get_features()",
+            return_format="DataFrame"
+        )
+
+        # Join
+        output_df = species_data.join(
+            feature_data.set_index("unique_id"),
+            on="id",
+            how="left"
+        )
+        output_df = output_df.replace(np.nan, None)
+        obj.speciesData = output_df
+
     async def get_projects_for_user(self, user_id):
         """
         Gets all projects for a user along with full projectData (metadata, files, run parameters, renderer).
@@ -112,6 +137,17 @@ class ProjectHandler(BaseHandler):
             LEFT JOIN bioprotect.metadata_planning_units pu
                 ON p.planning_unit_id = pu.unique_id
             WHERE p.user_id = %s
+            ORDER BY LOWER(p.name)
+        """, [user_id], return_format="Dict")
+
+        projects = await self.pg.execute("""
+            SELECT p.*, pu.alias AS planning_unit_alias, up.role
+            FROM bioprotect.projects p
+            JOIN bioprotect.user_projects up
+            ON up.project_id = p.id
+            LEFT JOIN bioprotect.metadata_planning_units pu
+            ON p.planning_unit_id = pu.unique_id
+            WHERE up.user_id = %s
             ORDER BY LOWER(p.name)
         """, [user_id], return_format="Dict")
 
@@ -221,12 +257,12 @@ class ProjectHandler(BaseHandler):
 
             if action == 'create':
                 await self.create_project()
-            elif action == 'create_import':
-                await self.create_import_project()
             elif action == 'create_group':
                 await self.create_project_group()
             elif action == 'update':
                 await self.update_project_parameters()
+            elif action == 'update_features':
+                await self.update_project_features()
             else:
                 raise ServicesError("Invalid action specified.")
 
@@ -279,70 +315,40 @@ class ProjectHandler(BaseHandler):
         ])
 
         user = self.get_argument('user')
+        print('user--------------------------------: ', user)
         project = self.get_argument('project')
         description = self.get_argument('description')
         planning_grid_name = self.get_argument('planning_grid_name')
-        interest_features = self.get_argument('interest_features')
-        target_values = self.get_argument('target_values')
-        spf_values = self.get_argument('spf_values')
 
-        self.create_project_folder(
-            self, project, self.proj_paths.EMPTY_PROJECT_TEMPLATE_FOLDER)
+        # 1. Create project in DB
 
-        self.update_file_parameters(
-            join(self.project_folder, "input.dat"),
-            {
-                'DESCRIPTION': description,
-                'CREATEDATE': datetime.now().strftime("%d/%m/%y %H:%M:%S"),
-                'PLANNING_UNIT_NAME': planning_grid_name
-            }
-        )
+        row = await self.pg.execute("""
+            INSERT INTO bioprotect.projects (user_id, name, description, planning_unit_id)
+            VALUES (
+                (SELECT id FROM bioprotect.users WHERE username = %s),
+                %s, %s,
+                (SELECT unique_id FROM bioprotect.metadata_planning_units WHERE alias = %s)
+            )
+            RETURNING id
+        """, [user, project, description, planning_grid_name], return_format="Array")
 
-        await self.update_species(self, interest_features, target_values, spf_values, True)
+        if not row:
+            raise ServicesError("Failed to create project")
+        project_id = row[0]["id"]
 
-        query = sql.SQL(
-            """
-            SELECT puid AS id, 1::double precision AS cost, 0::integer AS status
-            FROM bioprotect.{}
-            """
-        ).format(sql.Identifier(planning_grid_name))
+        # 2. Link features to this project
+        await self.update_project_features(project_id=project_id)
 
-        await self.pg.execute(
-            query,
-            return_format="File",
-            filename=join(self.input_folder, "pu.dat")
-        )
-
-        self.update_file_parameters(
-            join(self.project_folder, "input.dat"),
-            {'PUNAME': "pu.dat"}
-        )
-
+        # 3. Respond
         self.send_response({
-            'info': f"Project '{project}' created",
+            'info': f"Project '{project}' created with features",
             'name': project,
-            'user': user
-        })
-
-    # POST /projects?action=create_import
-    # Body:
-    # {
-    #     "user": "username",
-    #     "project": "project_name"
-    # }
-    async def create_import_project(self):
-        self.validate_args(self.request.arguments, ['user', 'project'])
-
-        project = self.get_argument('project')
-        self.create_project_folder(
-            self, project, self.proj_paths.EMPTY_PROJECT_TEMPLATE_FOLDER)
-
-        self.send_response({
-            'info': f"Project '{project}' created",
-            'name': project
+            'user': user,
+            'project_id': project_id
         })
 
     # GET /projects?action=get&user=username&project=project_name
+
     async def get_project(self):
         project_id = self.get_argument('projectId', None)
         resolution = int(self.get_argument("resolution", 7))
@@ -359,7 +365,7 @@ class ProjectHandler(BaseHandler):
         if project is None:
             raise ServicesError(f"That project does not exist")
 
-        # Define project paths
+        # Define project paths - need these for uploads
         self.project = project
         self.folder_user = join("./users", self.current_user)
         print('self.current_user: ', self.current_user)
@@ -367,10 +373,21 @@ class ProjectHandler(BaseHandler):
         self.input_folder = join(self.project_path, "input") + sep
 
         # 1. Load project data
-        self.projectData = await self.fetch_project_data(project, self.project_path)
+        self.projectData = await self.fetch_project_data(project)
 
         # 2. Load species data
         await self.get_species_data(self)
+
+        # 3. Load feature preprocessing (DB instead of file)
+        # self.speciesPreProcessingData = await self.pg.execute(
+        #     """
+        #     SELECT project_id, feature_unique_id, preprocessing_result
+        #     FROM bioprotect.feature_preprocessing
+        #     WHERE project_id = %s
+        #     """,
+        #     data=[project_id],
+        #     return_format="DataFrame"
+        # )
         self.speciesPreProcessingData = file_to_df(
             join(self.input_folder, "feature_preprocessing.dat"))
 
@@ -382,19 +399,39 @@ class ProjectHandler(BaseHandler):
             JOIN bioprotect.projects p ON p.id = pp.project_id
             JOIN bioprotect.metadata_planning_units mpu ON p.planning_unit_id = mpu.unique_id
             WHERE pp.project_id = %s
-            AND hc.resolution = %s
-            AND hc.project_area = mpu.alias
+                AND hc.resolution = %s
+                AND hc.project_area = mpu.alias
         """
         df = await self.pg.execute(query, data=[self.project["id"], resolution], return_format="DataFrame")
 
         self.planningUnitsData = normalize_dataframe(df, "status", "id")
 
+        # 5. Load protected area intersections (DB instead of file)
+        # self.protectedAreaIntersectionsData = await self.pg.execute(
+        #     """
+        #     SELECT project_id, puid, iucn_cat
+        #     FROM bioprotect.protected_area_intersections
+        #     WHERE project_id = %s
+        #     """,
+        #     data=[project_id],
+        #     return_format="DataFrame"
+        # )
         protected_areas_df = file_to_df(
             join(self.input_folder, "protected_area_intersections.dat"))
         self.protectedAreaIntersectionsData = normalize_dataframe(
             protected_areas_df, "iucn_cat", "puid")
 
-        # 4. Get project costs
+        # 6. Get project costs
+        # costs = await self.pg.execute(
+        #     """
+        #     SELECT h3_index AS id, cost
+        #     FROM bioprotect.project_costs
+        #     WHERE project_id = %s
+        #     """,
+        #     data=[project_id],
+        #     return_format="DataFrame"
+        # )
+        # self.costNames = ["Custom", "Equal area"] if not costs.empty else ["Equal area"]
         # NOT WHOLLY SURE ABOUT THIS _ NOT ACTUALLY GETTING COSTS
         query = """SELECT 1 FROM bioprotect.costs WHERE project_id = %s LIMIT 1"""
         cost_rows = await self.pg.execute(query, data=[self.project["id"]], return_format="Dict")
@@ -419,14 +456,29 @@ class ProjectHandler(BaseHandler):
         # """, [project_id], return_format="Dict")
 
         # 5. Update user
-        await self.pg.execute(
-            """
-            UPDATE bioprotect.users
-            SET last_project = %s
-            WHERE id = %s
-            """,
-            data=[self.project["id"], self.project["user_id"]]
-        )
+        uid = self.get_secure_cookie("user_id")
+        if not uid:
+            raise ServicesError("Not authenticated")
+        try:
+            user_id = int(uid.decode() if isinstance(
+                uid, (bytes, bytearray)) else uid)
+        except Exception:
+            raise ServicesError("Invalid user id in session")
+
+        if user_id:
+            await self.pg.execute(
+                """
+                UPDATE bioprotect.users
+                SET last_project = %s
+                WHERE id = %s
+                """,
+                data=[self.project["id"], user_id]
+            )
+        else:
+            await self.pg.execute(
+                "UPDATE bioprotect.users SET last_project = %s WHERE username = %s",
+                data=[self.project["id"], self.current_user]
+            )
 
         data = {
             'user': self.current_user,
@@ -457,7 +509,7 @@ class ProjectHandler(BaseHandler):
         result = await self.pg.execute(query, [self.current_user], return_format="Dict")
         project = result[0] if result else None
 
-    async def fetch_project_data(self, project, project_path):
+    async def fetch_project_data(self, project):
         """Fetches categorized project data from input.dat file."""
         project_id = project.get('id')
         run_params = await self.pg.execute(
@@ -663,6 +715,129 @@ class ProjectHandler(BaseHandler):
             'data': projects
         })
 
+    async def _remove_unlinked_features(self, project_id, feature_ids):
+        """
+        Remove project_features that are not in the provided feature_ids,
+        and cascade delete related rows in pu_feature_amounts + feature_preprocessing.
+        If feature_ids is empty, remove all.
+        """
+        removed_ids = []
+
+        if feature_ids:
+            removed_rows = await self.pg.execute("""
+                SELECT feature_unique_id
+                FROM bioprotect.project_features
+                WHERE project_id = %s
+                AND NOT (feature_unique_id = ANY(%s))
+            """, [project_id, feature_ids], return_format="Array")
+            removed_ids = [r["feature_unique_id"] for r in removed_rows]
+
+            await self.pg.execute("""
+                DELETE FROM bioprotect.project_features
+                WHERE project_id = %s
+                AND NOT (feature_unique_id = ANY(%s))
+            """, [project_id, feature_ids])
+
+        else:
+            removed_rows = await self.pg.execute("""
+                SELECT feature_unique_id
+                FROM bioprotect.project_features
+                WHERE project_id = %s
+            """, [project_id], return_format="Array")
+            removed_ids = [r["feature_unique_id"] for r in removed_rows]
+
+            await self.pg.execute(
+                "DELETE FROM bioprotect.project_features WHERE project_id = %s",
+                [project_id]
+            )
+
+        # if removed_ids:
+        #     await self.pg.execute("""
+        #         DELETE FROM bioprotect.pu_feature_amounts
+        #         WHERE project_id = %s AND feature_unique_id = ANY(%s)
+        #     """, [project_id, removed_ids])
+
+        #     await self.pg.execute("""
+        #         DELETE FROM bioprotect.feature_preprocessing
+        #         WHERE project_id = %s AND feature_unique_id = ANY(%s)
+        #     """, [project_id, removed_ids])
+
+    async def update_project_features(self, project_id=None):
+        """
+        Updates project feature links and settings in DB.
+        Replaces old updateSpecies/spec.dat functionality.
+        """
+        self.validate_args(self.request.arguments, ['interest_features'])
+
+        interest_features = self.get_argument("interest_features")
+        target_values = self.get_argument("target_values", None)
+        spf_values = self.get_argument("spf_values", None)
+
+        # parse lists
+        feature_ids = [int(x)
+                       for x in interest_features.split(",") if x.strip()]
+        targets = [x.strip() for x in target_values.split(",")
+                   ] if target_values else []
+        spfs = [x.strip()
+                for x in spf_values.split(",")] if spf_values else []
+
+        # basic length check (non-fatal; we still link features)
+        if (targets and len(targets) != len(feature_ids)) or (spfs and len(spfs) != len(feature_ids)):
+            raise ServicesError(
+                "Lengths of interest_features, target_values, and spf_values must match.")
+
+        # 1) resolve project_id
+        # If project_id is passed in (create_project), use it.
+        # Otherwise, resolve from user + project args (update_features endpoint).
+        if project_id is None:
+            user = self.get_argument("user")
+            project_name = self.get_argument("project")
+            rows = await self.pg.execute("""
+                select p.id as project_id
+                from bioprotect.projects p
+                join bioprotect.user_projects up on up.project_id = p.id
+                join bioprotect.users u on u.id = up.user_id
+                where u.username = %s and p.name = %s
+            """, [user, project_name], return_format="Array")
+            if not rows:
+                raise ServicesError(
+                    f"Project '{project_name}' for user '{user}' not found.")
+
+            project_id = rows[0]["project_id"]
+
+        # 2) clear features that have been deselected and remove them from other possible tables as well
+        await self._remove_unlinked_features(project_id, feature_ids)
+
+        # 3) upsert new data
+        for idx, fid in enumerate(feature_ids):
+            raw_target = float(targets[idx]) if targets and idx < len(
+                targets) else None
+            if raw_target is not None:
+                tv = raw_target / 100 if raw_target > 1 else raw_target
+            else:
+                tv = None
+            spf = float(spfs[idx]) if spfs and idx < len(spfs) else None
+            weight = None
+            target_type = "prop"  # or allow from payload
+
+            await self.pg.execute("""
+                INSERT INTO bioprotect.project_features (
+                    project_id, feature_unique_id, target_type, target_value, spf, weight
+                )
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (project_id, feature_unique_id)
+                DO UPDATE SET
+                    target_type  = COALESCE(EXCLUDED.target_type,  project_features.target_type),
+                    target_value = COALESCE(EXCLUDED.target_value, project_features.target_value),
+                    spf          = COALESCE(EXCLUDED.spf,          project_features.spf),
+                    weight       = COALESCE(EXCLUDED.weight,       project_features.weight),
+                    updated_at   = now()
+            """, [project_id, fid, target_type, tv, spf, weight])
+
+        return {"info": "Project features updated", "project_id": project_id}
+
+        return
+
     # POST /projects?action=update
     # Body:
     # {
@@ -671,6 +846,7 @@ class ProjectHandler(BaseHandler):
     #     "param1": "value1",
     #     "param2": "value2"
     # }
+
     async def update_project_parameters(self):
         self.validate_args(self.request.arguments, ['user', 'project'])
 

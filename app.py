@@ -5,7 +5,6 @@ import json
 import logging
 import os
 import platform
-import shlex
 import shutil
 import signal
 import subprocess
@@ -14,12 +13,9 @@ import time
 import uuid
 import webbrowser
 import xml.etree.ElementTree as ET
-import zipfile
-from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from subprocess import PIPE, Popen
 from threading import Thread
-from urllib import request
 from urllib.parse import urlparse
 
 import colorama
@@ -54,23 +50,19 @@ from psycopg2 import sql
 from rasterio.io import MemoryFile
 from services.file_service import (add_parameter_to_file,
                                    check_zipped_shapefile, delete_all_files,
-                                   delete_records_in_text_file,
-                                   delete_zipped_shapefile, get_files_in_folder,
-                                   get_output_file,
+                                   delete_zipped_shapefile,
+                                   get_files_in_folder, get_output_file,
                                    read_file, unzip_file, unzip_shapefile,
                                    update_file_parameters, write_df_to_file,
-                                   write_to_file, zip_folder)
-from services.project_service import (get_project_data,
-                                      get_safe_project_name, set_folder_paths,
-                                      write_csv)
+                                   write_to_file)
+from services.martin_service import restart_martin
+from services.project_service import (
+    get_project_data, set_folder_paths, write_csv)
 from services.run_command_service import run_command
 from services.service_error import ServicesError, raise_error
-from services.user_service import (dismiss_notification,
-                                   get_users,
+from services.user_service import (dismiss_notification, get_users,
                                    reset_notifications)
-from services.martin_service import restart_martin
 from sqlalchemy import create_engine, exc
-from tornado import gen, httpclient, queues
 from tornado.escape import json_decode
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 from tornado.ioloop import IOLoop
@@ -89,7 +81,7 @@ PERMITTED_METHODS = ["getServerData", "testTornado", "RestartMartin",
                      "getProjectsWithGrids", "getAtlasLayers"]
 """REST services that do not need authentication/authorisation."""
 ROLE_UNAUTHORISED_METHODS = {
-    "ReadOnly": ["createProject", "upgradeProject", "getCountries", "createPlanningUnitGrid", "uploadFileToFolder", "uploadFile", "importPlanningUnitGrid", "createFeaturePreprocessingFileFromImport", "importFeatures", "updatePUFile", "updateSpecFile", "getMarxanLog", "PreprocessFeature", "preprocessPlanningUnits", "preprocessProtectedAreas", "runMarxan", "stopProcess", "testRoleAuthorisation", "getRunLogs", "clearRunLogs", "updateWDPA", "unzipShapefile", "getShapefileFieldnames", "importGBIFData", "shutdown", "addParameter", "resetDatabase", "cleanup", "exportProject", "importProject", 'updateCosts', 'deleteCost'],
+    "ReadOnly": ["createProject", "upgradeProject", "getCountries", "createPlanningUnitGrid", "uploadFileToFolder", "uploadFile", "importPlanningUnitGrid", "createFeaturePreprocessingFileFromImport", "importFeatures", "updatePUFile", "getMarxanLog", "PreprocessFeature", "preprocessPlanningUnits", "preprocessProtectedAreas", "runMarxan", "stopProcess", "testRoleAuthorisation", "getRunLogs", "clearRunLogs", "updateWDPA", "unzipShapefile", "getShapefileFieldnames",  "shutdown", "addParameter", "resetDatabase", "cleanup", "importProject", 'updateCosts', 'deleteCost'],
     "User": ["testRoleAuthorisation", "clearRunLogs", "updateWDPA", "shutdown", "addParameter", "resetDatabase", "cleanup"],
     "Admin": []
 }
@@ -138,7 +130,7 @@ LOGGING_LEVEL = logging.INFO
 # pdoc3 dict to whitelist private members for the documentation
 __pdoc__ = {}
 privateMembers = ['get_geometry_type', 'add_parameter_to_file', 'check_zipped_shapefile', 'cleanup', 'clone_project', 'create_user', 'create_zipfile', 'delete_all_files', 'delete_archive_files', '_deleteFeature',  'delete_records_in_text_file', 'del_tileset', 'delete_zipped_shapefile', 'dismiss_notification',  'finish_feature_import', '_getAllProjects', 'get_dict_value', 'get_files_in_folder',   'get_key_value', 'get_keys', 'get_bp_log', 'get_notifications_data', 'get_output_file', 'get_project_data', 'get_projects_for_feature', 'get_projects_for_user', 'get_run_logs',
-                  'get_safe_project_name', 'get_species_data', 'get_unique_feature_name', 'get_user_data', 'get_users', 'get_users_data', 'normalize_dataframe', 'pad_dict', '_preprocessProtectedAreas', 'puid_array_to_df', 'raise_error', 'read_file', '_reprocessProtectedAreas', 'reset_notifications', 'run_command', '_setCORS', 'set_folder_paths', 'set_global_vars', 'unzip_file', 'unzip_shapefile', 'update_dataframe', 'update_file_parameters', 'update_run_log', 'update_species_file', '_uploadTileset', 'validate_args', 'write_csv', 'write_to_file', 'write_df_to_file', 'zip_folder']
+                  'get_safe_project_name', 'get_unique_feature_name', 'get_user_data', 'get_users', 'get_users_data', 'normalize_dataframe', 'pad_dict', '_preprocessProtectedAreas', 'puid_array_to_df', 'raise_error', 'read_file', '_reprocessProtectedAreas', 'reset_notifications', 'run_command', '_setCORS', 'set_folder_paths', 'set_global_vars', 'unzip_file', 'unzip_shapefile', 'update_dataframe', 'update_file_parameters', 'update_run_log', '_uploadTileset', 'validate_args', 'write_csv', 'write_to_file', 'write_df_to_file', 'zip_folder']
 
 for m in privateMembers:
     __pdoc__[m] = True
@@ -268,72 +260,6 @@ def log(message, color=Fore.RESET):
             f"{project_paths.PROJECT_FOLDER}server.log", f"{message}\n", "a")
 
 
-async def get_species_data(obj):
-    """
-    Retrieves species data for a project from the Marxan SPECNAME file as a DataFrame.
-    Joins this data with the PostGIS database if the project is a Marxan Web project.
-    Sets the resulting data on the `speciesData` attribute of the passed `obj`.
-
-    Args:
-        obj (BaseHandler): The request handler instance.
-
-    Returns:
-        None
-    """
-
-    def convert_vals(value):
-        return int(value*100)
-
-    project_id = obj.projectData["project"]["id"]
-    # Load species data from the db
-    # specname_path = os.path.join(
-    #     obj.input_folder, obj.projectData["files"]["SPECNAME"])
-    # df = file_to_df(specname_path)
-    # Load species data from the database
-    species_data = await obj.pg.execute(
-        """
-        SELECT id, feature_unique_id, prop, spf
-        FROM bioprotect.species_data
-        WHERE project_id = %s
-        """,
-        data=[project_id],
-        return_format="DataFrame"
-    )
-
-    if species_data.empty:
-        obj.speciesData = pd.DataFrame()
-        return
-
-    # Rename and convert as needed
-    species_data.rename(columns={
-        "prop": "target_value",
-        "id": "db_id",
-        "feature_unique_id": "id"
-    }, inplace=True)
-
-    species_data["target_value"] = species_data["target_value"].apply(
-        convert_vals)
-
-    # Get additional feature metadata from PostGIS
-    feature_data = await obj.pg.execute(
-        "SELECT * FROM bioprotect.get_features()",
-        return_format="DataFrame"
-    )
-
-    # Join species data with feature metadata
-    output_df = species_data.join(
-        feature_data.set_index("unique_id"),
-        on="id",
-        how="left"
-    )
-
-    # Final clean-up
-    output_df = output_df.replace(np.nan, None)
-
-    # Assign to object
-    obj.speciesData = output_df
-
-
 # get the information about which species have already been preprocessed
 def file_to_df(file_name):
     """Reads a file and returns the data as a DataFrame
@@ -428,75 +354,6 @@ def get_bp_log(obj):
     print('log_file_path: ', log_file_path)
     obj.bpLog = read_file(
         log_file_path) if os.path.exists(log_file_path) else ""
-
-
-async def update_species_file(obj, interest_features, target_values, spf_values, create=False):
-    """
-    Updates or creates the SPECNAME file with the passed interest features.
-
-    Args:
-        obj (BaseHandler): The request handler instance.
-        interest_features (str): A comma-separated string with the interest features.
-        target_values (str): A comma-separated string with the corresponding interest feature targets.
-        spf_values (str): A comma-separated string with the corresponding interest feature spf values.
-        create (bool): If True, creates a new SPECNAME file. Default is False.
-
-    Returns:
-        None
-    """
-    # Parse input data
-    ids = [int(s) for s in interest_features.split(",") if interest_features]
-    props = [int(s) for s in target_values.split(",") if target_values]
-    spfs = spf_values.split(",")
-
-    removed_ids = []
-    if not create:
-        # Read existing SPECNAME data
-        specname_path = os.path.join(
-            obj.input_folder, obj.projectData["files"]["SPECNAME"])
-
-        df = file_to_df(specname_path)
-
-        # Determine removed IDs
-        current_ids = [] if df.empty else df["id"].unique().tolist()
-        removed_ids = list(set(current_ids) - set(ids))
-
-        # Update related files to reflect removals
-        if removed_ids:
-            puvspr_filename = obj.projectData["files"]["PUVSPRNAME"]
-
-            # Update PUVSPRNAME file
-            puvspr_path = os.path.join(obj.input_folder, puvspr_filename)
-            if os.path.exists(puvspr_path):
-                delete_records_in_text_file(
-                    puvspr_path, "species", removed_ids)
-
-            # Update feature preprocessing file
-            preprocessing_path = os.path.join(
-                obj.input_folder, "feature_preprocessing.dat")
-            if os.path.exists(preprocessing_path):
-                delete_records_in_text_file(
-                    preprocessing_path, "id", removed_ids)
-
-    # Prepare records for the new or updated SPECNAME file
-    records = [
-        {"id": ids[i], "prop": str(props[i] / 100), "spf": spfs[i]}
-        for i in range(len(ids)) if ids[i] not in removed_ids
-    ]
-
-    # Create a new DataFrame
-    new_df = pd.DataFrame(records, columns=["id", "prop", "spf"])
-
-    # Merge with existing data if updating
-    if not create and not df.empty and set(df.columns) != {"id", "prop", "spf"}:
-        df = df.drop(columns=["prop", "spf"], errors="ignore")
-        new_df = pd.merge(df, new_df, on="id", how="outer").fillna("0")
-
-    # Sort by ID and write to file
-    if not new_df.empty:
-        new_df = new_df.sort_values(by=["id"])
-
-    await write_csv(obj, "SPECNAME", new_df)
 
 
 def normalize_dataframe(df, column_to_normalize_by, puid_column_name, classes=None):
@@ -1095,9 +952,14 @@ class AuthHandler(BaseHandler):
 
             # Fetch user's projects
             project_query = """
-                SELECT id, name, description, date_created
-                FROM bioprotect.projects WHERE user_id = %s
+                SELECT p.id, p.name, p.description, p.date_created, up.role
+                FROM bioprotect.projects p
+                JOIN bioprotect.user_projects up
+                ON up.project_id = p.id
+                WHERE up.user_id = %s
+                ORDER BY LOWER(p.name)
             """
+
             project_result = await pg.execute(project_query, [user['id']], return_format="Dict")
 
             # set folder paths for user when they login
@@ -1680,39 +1542,6 @@ class getServerData(BaseHandler):
             raise_error(self, e.args[0])
 
 
-class updateSpecFile(BaseHandler):
-    """REST HTTP handler. Updates the SPECNAME file with the posted data. The required arguments in the request.arguments parameter are:
-
-    Args:
-        user (string): The name of the user.
-        project (string): The name of the project.
-        interest_features (string): A comma-separated string with the interest features.
-        target_values (string): A comma-separated string with the corresponding interest feature targets.
-        spf_values (string): A comma-separated string with the corresponding interest feature spf values.
-    Returns:
-        A dict with the following structure (if the class raises an exception, the error message is included in an 'error' key/value pair):
-
-        {
-            "info": Informational message
-        }
-    """
-
-    async def post(self):
-        try:
-            # validate the input arguments
-            validate_args(self.request.arguments, [
-                'user', 'project', 'interest_features', 'spf_values', 'target_values'])
-            # update the spec.dat file and other related files
-            await update_species_file(self,
-                                      self.get_argument("interest_features"),
-                                      self.get_argument("target_values"),
-                                      self.get_argument("spf_values"))
-            # set the response
-            self.send_response({'info': "spec.dat file updated"})
-        except ServicesError as e:
-            raise_error(self, e.args[0])
-
-
 class UpdatePUFile(BaseHandler):
     """
     REST HTTP handler. Updates the pu.dat file with the posted data.
@@ -2084,8 +1913,8 @@ class getShapefileFieldnames(BaseHandler):
             validate_args(self.request.arguments, ['filename'])
 
             # load the shapefile
-            shapefile = project_paths.IMPORT_FOLDER +
-            self.get_argument('filename')
+            shapefile = project_paths.IMPORT_FOLDER + \
+                self.get_argument('filename')
             data_source = ogr.Open(shapefile)
             if not data_source:
                 raise ServicesError(f"Shapefile '{shapefile}' not found")
@@ -2707,220 +2536,6 @@ class importFeatures(SocketHandler):
                     await pg.execute(query)
 
 
-# imports an item from GBIF
-
-
-class importGBIFData(SocketHandler):
-    """REST WebSocket Handler. Imports an item using the GBIF API. The required arguments in the request.arguments parameter are:
-
-    Args:
-        taxonKey (string): The GBIF taxon key for the feature.
-        scientificName (string): The GBIF scientific name for the feature.
-    Returns:
-        WebSocket dict messages with one or more of the following keys (if the class raises an exception, the error message is included in an 'error' key/value pair):
-
-        {
-            "info": Contains detailed progress statements on the import process,
-            "elapsedtime": The elapsed time in seconds of the run,
-            "status": One of Preprocessing, pid, FeatureCreated or Finished,
-            "id": The oid of the feature created,
-            "feature_class_name": The name of the feature class created,
-            "uploadId": The Mapbox tileset upload id
-        }
-    """
-    @staticmethod
-    def import_df(self, df, table_name):
-        """
-        Imports a DataFrame into a PostgreSQL table.
-
-        This function creates or replaces the specified table in the 'marxan' schema
-        with the contents of the given DataFrame. It uses a specific connection string
-        and is not asynchronous.
-        """
-        db_url = (
-            f"postgresql://{db_config.DATABASE_USER}:"
-            f"{db_config.DATABASE_PASSWORD}@"
-            f"{db_config.DATABASE_HOST}/"
-            f"{db_config.DATABASE_NAME}"
-        )
-        engine = create_engine(db_url)
-        # Import the DataFrame to the specified table
-        df.to_sql(f"bioprotect.{table_name}", con=engine,
-                  if_exists='replace', index=False)
-
-    async def open(self):
-        """Manages the GBIF import from downloading the data to importing into PostGIS.
-        """
-        try:
-            await super().open({'info': "Importing features from GBIF.."})
-        except ServicesError:  # authentication/authorisation error
-            pass
-        else:
-            # validate the input arguments
-            validate_args(self.request.arguments, [
-                'taxonKey', 'scientificName'])
-            try:
-                taxonKey = self.get_argument('taxonKey')
-                # get the occurrences using asynchronous parallel requests
-                df = await self.getGBIFOccurrences(taxonKey)
-                if (df.empty == False):
-                    # get the feature class name
-                    feature_class_name = "gbif_" + str(taxonKey)
-                    # create the table if it doesnt already exists
-                    await pg.execute(sql.SQL("DROP TABLE IF EXISTS bioprotect.{}").format(sql.Identifier(feature_class_name)))
-                    await pg.execute(sql.SQL("CREATE TABLE bioprotect.{} (eventdate date, gbifid bigint, lng double precision, lat double precision, geometry geometry)").format(sql.Identifier(feature_class_name)))
-                    # insert the records - this calls import_df which is blocking
-                    await IOLoop.current().run_in_executor(None, self.import_df, df, feature_class_name)
-                    # update the geometry field
-                    await pg.execute(sql.SQL("UPDATE bioprotect.{} SET geometry=bioprotect.ST_SplitAtDateline(ST_Transform(ST_Buffer(ST_Transform(ST_SetSRID(ST_Point(lng, lat),4326),3410),%s),4326))").format(sql.Identifier(feature_class_name)), [GBIF_POINT_BUFFER_RADIUS])
-                    # get the gbif vernacular name
-                    feature_name = self.get_argument('scientificName')
-                    vernacularNames = self.getVernacularNames(taxonKey)
-                    description = self.getCommonName(vernacularNames)
-                    # add an index and a record in the metadata_interest_features table and start the upload to mapbox
-
-                    id = await finish_feature_import(feature_class_name, feature_name, description, "Imported from GBIF", self.get_current_user())
-                    # start the upload to mapbox
-                    uploadId = await upload_tileset_to_mapbox(feature_class_name, feature_class_name)
-
-                    self.send_response({'id': id, 'feature_class_name': feature_class_name, 'uploadId': uploadId,
-                                        'info': "Feature '" + feature_name + "' imported", 'status': 'FeatureCreated'})
-                    # complete
-                    self.close(
-                        {'info': "Features imported", 'uploadId': uploadId})
-                else:
-                    raise ServicesError(
-                        "No records for " + self.get_argument('scientificName'))
-
-            except (ServicesError) as e:
-                if "already exists" in e.args[0]:
-                    self.close({'error': "The feature '" + feature_name +
-                                "' already exists", 'info': 'Failed to import features'})
-                else:
-                    self.close(
-                        {'error': e.args[0], 'info': 'Failed to import features'})
-
-    # parallel asynchronous loading og gbif data
-    async def getGBIFOccurrences(self, taxonKey):
-        """Downloads the GBIF occurrence records from the API.
-
-        Args:
-            See the class definition.
-        Returns:
-             pd.DataFrame: The occurrence records as a dataframe. Each records contains the keys: eventDate,gbifID,lng,lat,geometry.
-        """
-        def getGBIFUrl(taxonKey, limit, offset=0):
-            return GBIF_API_ROOT + "occurrence/search?taxonKey=" + str(taxonKey) + "&basisOfRecord=HUMAN_OBSERVATION&limit=" + str(limit) + "&hasCoordinate=true&offset=" + str(offset)
-
-        # makes a call to gbif
-        async def makeRequest(url):
-            logging.debug(url)
-            response = await httpclient.AsyncHTTPClient().fetch(url)
-            return response.body.decode(errors="ignore")
-
-        # fetches the url and tracks the progress
-        async def fetch_url(current_url):
-            if current_url in fetching:
-                return
-            fetching.add(current_url)
-            response = await makeRequest(current_url)
-            # get the response as a json object
-            _json = json.loads(response)
-            # get the lat longs
-            data = [OrderedDict({'eventDate': item['eventDate'] if 'eventDate' in item.keys() else None, 'gbifID': item['gbifID'],
-                                'lng': item['decimalLongitude'], 'lat': item['decimalLatitude'], 'geometry': ''}) for item in _json['results']]
-            # append them to the list
-            latLongs.extend(data)
-            fetched.add(current_url)
-
-        # helper to request a specific url
-        async def worker():
-            async for url in q:
-                if url is None:
-                    return
-                try:
-                    # fetch the url
-                    await fetch_url(url)
-                except Exception as e:
-                    log("Exception: %s %s" % (e, url))
-                    dead.add(url)
-                finally:
-                    q.task_done()
-
-        # initialise the lat/longs
-        latLongs = []
-        # get the number of occurrences
-        _url = getGBIFUrl(taxonKey, 10)
-        req = request.Request(_url)
-        # get the response
-        resp = request.urlopen(req)
-        # parse the results as a json object
-        results = json.loads(resp.read())
-        numOccurrences = results['count']
-        # error check
-        if (numOccurrences > GBIF_OCCURRENCE_LIMIT):
-            raise ServicesError(
-                "Number of GBIF occurrence records is greater than " + str(GBIF_OCCURRENCE_LIMIT))
-        # get the page count
-        pageCount = int(numOccurrences//GBIF_PAGE_SIZE) + 1
-        # get the urls to fetch
-        urls = [getGBIFUrl(taxonKey, GBIF_PAGE_SIZE, (i * GBIF_PAGE_SIZE))
-                for i in range(0, pageCount)]
-        # create a queue for the urls to fetch
-        q = queues.Queue()
-        # initialise the sets to track progress
-        fetching, fetched, dead = set(), set(), set()
-        # add all the urls to the queue
-        for _url in urls:
-            await q.put(_url)
-        # Start workers, then wait for the work queue to be empty.
-        workers = gen.multi([worker() for _ in range(GBIF_CONCURRENCY)])
-        await q.join()
-        assert fetching == (fetched | dead)
-        # Signal all the workers to exit.
-        for _ in range(GBIF_CONCURRENCY):
-            await q.put(None)
-        await workers
-        return pd.DataFrame(latLongs)
-
-    def getVernacularNames(self, taxonKey):
-        """Gets vernacular names for the GBIF taxon key.
-
-        Args:
-            See the class definition.
-        Returns:
-            See https://www.gbif.org/developer/species.
-        """
-        try:
-            # build the url request
-            url = GBIF_API_ROOT + "species/" +
-            str(taxonKey) + "/vernacularNames"
-            # make the request
-            req = request.Request(url)
-            # get the response
-            resp = request.urlopen(req)
-            # parse the results as a json object
-            results = json.loads(resp.read())
-            return results['results']
-        except (Exception) as e:
-            log(e.args[0])
-
-    def getCommonName(self, vernacularNames, language='eng'):
-        """Gets common names for the vernacular names.
-
-        Args:
-            vernacularNames (string[]): See https://www.gbif.org/developer/species.
-        Returns:
-            See https://www.gbif.org/developer/species.
-        """
-        commonNames = [i['vernacularName']
-                       for i in vernacularNames if i['language'] == language]
-        if (len(commonNames) > 0):
-            return commonNames[0]
-        else:
-            return 'No common name'
-
-
 class createFeaturesFromWFS(SocketHandler):
     """REST WebSocket Handler. Creates a new feature (or set of features) from a WFS endpoint. Sends an error if the feature already exist. The required arguments in the request.arguments parameter are:
 
@@ -3005,141 +2620,6 @@ class createFeaturesFromWFS(SocketHandler):
                 if os.path.exists(project_paths.IMPORT_FOLDER + feature_class_name + ".gfs"):
                     os.remove(project_paths.IMPORT_FOLDER +
                               feature_class_name + ".gfs")
-
-
-class exportProject(SocketHandler):
-    """REST WebSocket Handler. Exports a project including all of the spatial data and metadata (not applicable to old version Marxan projects) to an *.mxw file. The required arguments in the request.arguments parameter are:
-
-    Args:
-        user (string): The name of the user.
-        project (string): The name of the project to export.
-    Returns:
-        WebSocket dict messages with one or more of the following keys (if the class raises an exception, the error message is included in an 'error' key/value pair):
-
-        {
-            "info": Contains detailed progress statements on the export process,
-            "elapsedtime": The elapsed time in seconds of the export,
-            "status": One of Preprocessing, pid, FeatureCreated or Finished,
-            "id": The oid of the feature created,
-            "feature_class_name": The name of the feature class created,
-            "uploadId": The Mapbox tileset upload id
-        }
-    """
-
-    async def open(self):
-        try:
-            await super().open({'info': "Exporting project.."})
-        except ServicesError:  # authentication/authorisation error
-            pass
-        else:
-            validate_args(self.request.arguments, ['user', 'project'])
-            self.send_response(
-                {'status': 'Preprocessing', 'info': "Copying project folder.."})
-
-            user = self.get_argument('user')
-            project = self.get_argument('project')
-            export_folder = os.path.join(
-                project_paths.EXPORT_FOLDER, f"{user}_{project}")
-
-            # ✅ Step 1: Prepare export folder
-            await prepare_export_folder(export_folder, self.project_folder)
-
-            # ✅ Step 2: Export Features
-            await export_features(self, export_folder)
-
-            # ✅ Step 3: Export Planning Unit Grids
-            await export_planning_unit_grids(self, export_folder)
-
-            # ✅ Step 4: Zip the Project
-            await zip_project(export_folder)
-
-            # ✅ Step 5: Final Response
-            self.close({'info': "Export project complete",
-                       'filename': f"{user}_{project}.mxw"})
-
-            async def prepare_export_folder(export_folder, project_folder):
-                # remote the folder if it already exists
-                if os.path.exists(export_folder):
-                    shutil.rmtree(export_folder)
-                # copy the project folder
-                shutil.copytree(project_folder, export_folder)
-
-            async def export_features(self, export_folder):
-                self.send_response(
-                    {'status': 'Preprocessing', 'info': "Exporting features..."})
-                await get_species_data(self)
-                feature_classnames = self.speciesData['feature_class_name'].tolist(
-                )
-                # ✅ Export shapefiles
-                db_connection = format_db_connection()
-                shapefile_output_path = os.path.join(
-                    export_folder, EXPORT_F_SHP_FOLDER)
-                await run_ogr2ogr(db_config.OGR2OGR_EXECUTABLE,
-                                  "-f", "ESRI Shapefile",
-                                  shapefile_output_path, db_connection,
-                                  *feature_classnames)
-                # export all of the feature classes as shapefiles
-                # ✅ Export feature metadata as CSV
-                self.send_response(
-                    {'status': 'Preprocessing', 'info': "Exporting feature metadata..."})
-                escaped_names = "', '".join(feature_classnames)
-                sql_query = f"""
-                    SELECT unique_id, feature_class_name, alias, description
-                    FROM metadata_interest_features
-                    WHERE feature_class_name = ANY (ARRAY['{escaped_names}']);
-                """
-                csv_output_path = os.path.join(
-                    export_folder, EXPORT_F_METADATA)
-                await run_ogr2ogr(db_config.OGR2OGR_EXECUTABLE,
-                                  "-f", "CSV",
-                                  csv_output_path, db_connection,
-                                  "-sql", sql_query, "-lco", "SEPARATOR=TAB")
-
-            async def export_planning_unit_grids(self, export_folder):
-                """Exports planning unit grid and metadata."""
-                self.send_response(
-                    {'status': 'Preprocessing', 'info': "Exporting planning grid..."})
-
-                # ✅ Fetch planning unit grid
-                pu_name = self.projectData['metadata']['PLANNING_UNIT_NAME']
-                await pg.exportToShapefile(os.path.join(export_folder, EXPORT_PU_SHP_FOLDER), pu_name)
-
-                # ✅ Export planning unit grid metadata
-                self.send_response(
-                    {'status': 'Preprocessing', 'info': "Exporting planning grid metadata..."})
-                sql_query = f"""
-                    SELECT feature_class_name, alias, description, country_id, aoi_id, domain, _area,
-                        ST_AsText(envelope) AS envelope, creation_date, source, created_by,
-                        tilesetid, planning_unit_count
-                    FROM bioprotect.metadata_planning_units
-                    WHERE feature_class_name = '{pu_name}';
-                """
-
-                csv_output_path = os.path.join(
-                    export_folder, EXPORT_PU_METADATA)
-                db_connection = format_db_connection()
-                await run_ogr2ogr(db_config.OGR2OGR_EXECUTABLE, "-f", "CSV", csv_output_path, db_connection, "-sql", sql_query, "-lco", "SEPARATOR=TAB")
-
-            async def zip_project(export_folder):
-                """Zips the project folder and renames it with .mxw extension."""
-                self.send_response(
-                    {'status': 'Preprocessing', 'info': "Zipping project..."})
-                await IOLoop.current().run_in_executor(None, zip_folder, export_folder, export_folder)
-
-                # ✅ Rename the file with .mxw extension
-                os.rename(export_folder + ".zip", export_folder + ".mxw")
-                shutil.rmtree(export_folder)  # Remove original folder
-
-            async def run_ogr2ogr(*args):
-                """Runs an ogr2ogr command asynchronously."""
-                cmd_parts = [shlex.quote(str(arg))
-                             for arg in args]  # Escape each argument
-                cmd = " ".join(cmd_parts)
-                await run_command(cmd)  # Execute command
-
-            def format_db_connection():
-                """Formats the PostgreSQL database connection string for ogr2ogr."""
-                return f"PG:host={db_config.DATABASE_HOST} user={db_config.DATABASE_USER} dbname={db_config.DATABASE_NAME} password={db_config.DATABASE_PASSWORD} ACTIVE_SCHEMA=marxan"
 
 
 ####################################################################################################################################################################################################################################################################
@@ -4237,10 +3717,8 @@ class Application(tornado.web.Application):
 
         return [
             ("/server/auth", AuthHandler),
-            ("/server/projects", ProjectHandler, dict(pg=pg,
-                                                      get_species_data=get_species_data,
-                                                      update_species=update_species_file)),
-            ("/server/exportProject", exportProject),
+            ("/server/projects",
+                ProjectHandler, dict(pg=pg)),
             ("/server/users", UserHandler, dict(pg=pg, project_paths=project_paths)),
             ("/server/features", FeatureHandler, dict(pg=pg,
                                                       finish_feature_import=finish_feature_import)),
@@ -4273,7 +3751,6 @@ class Application(tornado.web.Application):
             ("/server/getCountries", getCountries),
 
             ("/server/getAllSpeciesData", getAllSpeciesData),
-            ("/server/updateSpecFile", updateSpecFile),
 
             ("/server/uploadFileToFolder", uploadFileToFolder),
             ("/server/unzipShapefile", unzipShapefile),
@@ -4292,7 +3769,6 @@ class Application(tornado.web.Application):
             ("/server/clearRunLogs", clearRunLogs),
             ("/server/updateWDPA", updateWDPA),
 
-            ("/server/importGBIFData", importGBIFData),
             ("/server/dismissNotification", dismissNotification),
             ("/server/resetNotifications", resetNotifications),
             ("/server/testRoleAuthorisation", testRoleAuthorisation),
