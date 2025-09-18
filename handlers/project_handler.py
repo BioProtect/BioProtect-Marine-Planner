@@ -148,7 +148,7 @@ class ProjectHandler(BaseHandler):
                   f.extent,
                   f.source,
                   f.created_by
-                FROM bioprotect.project_feature pf
+                FROM bioprotect.project_features pf
                 JOIN bioprotect.metadata_interest_features f
                   ON f.unique_id = pf.feature_unique_id
                 WHERE pf.project_id = %s

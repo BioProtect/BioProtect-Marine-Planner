@@ -68,6 +68,7 @@ from services.service_error import ServicesError, raise_error
 from services.user_service import (dismiss_notification,
                                    get_users,
                                    reset_notifications)
+from services.martin_service import restart_martin
 from sqlalchemy import create_engine, exc
 from tornado import gen, httpclient, queues
 from tornado.escape import json_decode
@@ -84,12 +85,12 @@ from tornado.web import HTTPError, StaticFileHandler
 ####################################################################################################################################################################################################################################################################
 
 # SECURITY SETTINGS
-PERMITTED_METHODS = ["getServerData", "testTornado",
+PERMITTED_METHODS = ["getServerData", "testTornado", "RestartMartin",
                      "getProjectsWithGrids", "getAtlasLayers"]
 """REST services that do not need authentication/authorisation."""
 ROLE_UNAUTHORISED_METHODS = {
-    "ReadOnly": ["createProject", "upgradeProject", "getCountries", "createPlanningUnitGrid", "uploadFileToFolder", "uploadFile", "importPlanningUnitGrid", "createFeaturePreprocessingFileFromImport", "importFeatures", "updatePUFile", "updateSpecFile", "getMarxanLog", "PreprocessFeature", "preprocessPlanningUnits", "preprocessProtectedAreas", "runMarxan", "stopProcess", "testRoleAuthorisation", "getRunLogs", "clearRunLogs", "updateWDPA", "unzipShapefile", "getShapefileFieldnames", "runGapAnalysis", "importGBIFData", "deleteGapAnalysis", "shutdown", "addParameter", "resetDatabase", "cleanup", "exportProject", "importProject", 'updateCosts', 'deleteCost', 'runSQLFile'],
-    "User": ["testRoleAuthorisation", "clearRunLogs", "updateWDPA", "shutdown", "addParameter", "resetDatabase", "cleanup", 'runSQLFile'],
+    "ReadOnly": ["createProject", "upgradeProject", "getCountries", "createPlanningUnitGrid", "uploadFileToFolder", "uploadFile", "importPlanningUnitGrid", "createFeaturePreprocessingFileFromImport", "importFeatures", "updatePUFile", "updateSpecFile", "getMarxanLog", "PreprocessFeature", "preprocessPlanningUnits", "preprocessProtectedAreas", "runMarxan", "stopProcess", "testRoleAuthorisation", "getRunLogs", "clearRunLogs", "updateWDPA", "unzipShapefile", "getShapefileFieldnames", "importGBIFData", "shutdown", "addParameter", "resetDatabase", "cleanup", "exportProject", "importProject", 'updateCosts', 'deleteCost'],
+    "User": ["testRoleAuthorisation", "clearRunLogs", "updateWDPA", "shutdown", "addParameter", "resetDatabase", "cleanup"],
     "Admin": []
 }
 """Dict that controls access to REST services using role-based authentication. Add REST services that you want to lock down to specific roles - a class added to an array will make that method unavailable for that role"""
@@ -125,8 +126,6 @@ GBIF_OCCURRENCE_LIMIT = 200000
 """From the GBIF docs here: https://www.gbif.org/developer/occurrence#search"""
 UNIFORM_COST_NAME = "Equal area"
 """The name of the cost profile that is equal area."""
-DOCS_ROOT = "https://docs.marxanweb.org/"
-"""The url for the documentation root."""
 SHUTDOWN_EVENT = tornado.locks.Event()
 """A Tornado event to allow it to exit gracefully."""
 PING_INTERVAL = 30000
@@ -138,7 +137,7 @@ LOGGING_LEVEL = logging.INFO
 
 # pdoc3 dict to whitelist private members for the documentation
 __pdoc__ = {}
-privateMembers = ['get_geometry_type', 'add_parameter_to_file', 'check_zipped_shapefile', 'cleanup', 'clone_project', 'create_user', 'create_zipfile', 'delete_all_files', 'delete_archive_files', '_deleteFeature',  'delete_records_in_text_file', 'del_tileset', 'delete_zipped_shapefile', 'dismiss_notification',  'finish_feature_import', '_getAllProjects', 'get_dict_value', 'get_files_in_folder',   'get_key_value', 'get_keys', 'get_marxan_log', 'get_notifications_data', 'get_output_file', 'get_project_data', 'get_projects_for_feature', 'get_projects_for_user', 'get_run_logs',
+privateMembers = ['get_geometry_type', 'add_parameter_to_file', 'check_zipped_shapefile', 'cleanup', 'clone_project', 'create_user', 'create_zipfile', 'delete_all_files', 'delete_archive_files', '_deleteFeature',  'delete_records_in_text_file', 'del_tileset', 'delete_zipped_shapefile', 'dismiss_notification',  'finish_feature_import', '_getAllProjects', 'get_dict_value', 'get_files_in_folder',   'get_key_value', 'get_keys', 'get_bp_log', 'get_notifications_data', 'get_output_file', 'get_project_data', 'get_projects_for_feature', 'get_projects_for_user', 'get_run_logs',
                   'get_safe_project_name', 'get_species_data', 'get_unique_feature_name', 'get_user_data', 'get_users', 'get_users_data', 'normalize_dataframe', 'pad_dict', '_preprocessProtectedAreas', 'puid_array_to_df', 'raise_error', 'read_file', '_reprocessProtectedAreas', 'reset_notifications', 'run_command', '_setCORS', 'set_folder_paths', 'set_global_vars', 'unzip_file', 'unzip_shapefile', 'update_dataframe', 'update_file_parameters', 'update_run_log', 'update_species_file', '_uploadTileset', 'validate_args', 'write_csv', 'write_to_file', 'write_df_to_file', 'zip_folder']
 
 for m in privateMembers:
@@ -421,13 +420,13 @@ async def process_protected_areas(obj, planning_grid_name=None, folder=None):
 
 
 # gets the marxan log after a run
-def get_marxan_log(obj):
+def get_bp_log(obj):
     """
     Retrieves the Marxan log from the log file after a run and sets it on the provided object.
     """
     log_file_path = os.path.join(obj.output_folder, "output_log.dat")
     print('log_file_path: ', log_file_path)
-    obj.marxanLog = read_file(
+    obj.bpLog = read_file(
         log_file_path) if os.path.exists(log_file_path) else ""
 
 
@@ -455,6 +454,7 @@ async def update_species_file(obj, interest_features, target_values, spf_values,
         # Read existing SPECNAME data
         specname_path = os.path.join(
             obj.input_folder, obj.projectData["files"]["SPECNAME"])
+
         df = file_to_df(specname_path)
 
         # Determine removed IDs
@@ -770,7 +770,6 @@ def _setCORS(obj):
     """
     # get the referer
     if "Referer" in list(obj.request.headers.keys()):
-        # get the referer url, e.g. https://marxan-client-blishten.c9users.io/ or https://beta.biopama.org/marxan-client/build/
         referer = obj.request.headers.get("Referer")
         # get the origin
         parsed = urlparse(referer)
@@ -1489,9 +1488,9 @@ class getMarxanLog(BaseHandler):
             # validate the input arguments
             validate_args(self.request.arguments, ['user', 'project'])
             # get the log
-            get_marxan_log(self)
+            get_bp_log(self)
             # set the response
-            self.send_response({"log": self.marxanLog})
+            self.send_response({"log": self.bpLog})
         except ServicesError as e:
             raise_error(self, e.args[0])
 
@@ -1596,7 +1595,7 @@ class getResults(BaseHandler):
             set_folder_paths(self, self.request.arguments,
                              project_paths.USERS_FOLDER)
             # get the log
-            get_marxan_log(self)
+            get_bp_log(self)
             # get the best solution
             best_solution_file = os.path.join(
                 self.output_folder, "output_mvbest")
@@ -1617,7 +1616,7 @@ class getResults(BaseHandler):
                 summed_sol_df, "number", "planning_unit")
             # set the response
 
-            self.send_response({'info': 'Results loaded', 'log': self.marxanLog,
+            self.send_response({'info': 'Results loaded', 'log': self.bpLog,
                                 'mvbest': self.bestSolution.to_dict(orient="split")["data"],
                                 'summary': self.outputSummary.to_dict(orient="split")["data"],
                                 'ssoln': self.summedSolution})
@@ -1704,7 +1703,10 @@ class updateSpecFile(BaseHandler):
             validate_args(self.request.arguments, [
                 'user', 'project', 'interest_features', 'spf_values', 'target_values'])
             # update the spec.dat file and other related files
-            await update_species_file(self, self.get_argument("interest_features"), self.get_argument("target_values"), self.get_argument("spf_values"))
+            await update_species_file(self,
+                                      self.get_argument("interest_features"),
+                                      self.get_argument("target_values"),
+                                      self.get_argument("spf_values"))
             # set the response
             self.send_response({'info': "spec.dat file updated"})
         except ServicesError as e:
@@ -2082,8 +2084,8 @@ class getShapefileFieldnames(BaseHandler):
             validate_args(self.request.arguments, ['filename'])
 
             # load the shapefile
-            shapefile = project_paths.IMPORT_FOLDER + \
-                self.get_argument('filename')
+            shapefile = project_paths.IMPORT_FOLDER +
+            self.get_argument('filename')
             data_source = ogr.Open(shapefile)
             if not data_source:
                 raise ServicesError(f"Shapefile '{shapefile}' not found")
@@ -2156,10 +2158,8 @@ class stopProcess(BaseHandler):
         try:
             # validate the input arguments
             validate_args(self.request.arguments, ['pid'])
-            # get the pid from the pid request parameter - this will be an identifier (m=marxan run, q=query) followed by the pid, e.g. m1234 is a marxan run process with a pid of 1234
             pid = self.get_argument('pid')[1:]
             try:
-                # if the process is a marxan run, then update the run log
                 if (self.get_argument('pid')[:1] == 'm'):
                     # to distinguish between a process killed by the user and by the OS, we need to update the runlog.dat file to set this process as stopped and not killed
                     update_run_log(int(pid), None, None, None, 'Stopped')
@@ -2271,33 +2271,6 @@ class resetNotifications(BaseHandler):
             raise_error(self, e.args[0])
 
 
-class deleteGapAnalysis(BaseHandler):
-    """REST HTTP handler. Deletes a pre-cooked gap analysis, for example when the features in a project change. The required arguments in the request.arguments parameter are:
-
-    Args:
-        user (string): The name of the user.
-        project (string): The name of the project in which to delete the gap analysis.
-    Returns:
-        A dict with the following structure (if the class raises an exception, the error message is included in an 'error' key/value pair):
-
-        {
-            "info": Informational message
-        }
-    """
-
-    async def get(self):
-        try:
-            validate_args(self.request.arguments, ['user', 'project'])
-            # delete the gap analysis
-            project_name = get_safe_project_name(self.get_argument("project"))
-            table_name = "gap_" + \
-                self.get_argument("user") + "_" + project_name
-            await pg.execute(sql.SQL("DROP TABLE IF EXISTS bioprotect.{};").format(sql.Identifier(table_name.lower())))
-            self.send_response({'info': "Gap analysis deleted"})
-        except ServicesError as e:
-            raise_error(self, e.args[0])
-
-
 class testRoleAuthorisation(BaseHandler):
     """REST HTTP handler. For testing role access to servivces. The required arguments in the request.arguments parameter are:
 
@@ -2313,38 +2286,6 @@ class testRoleAuthorisation(BaseHandler):
 
     def get(self):
         self.send_response({'info': "Service successful"})
-
-
-class runSQLFile(BaseHandler):
-    """REST HTTP handler. Runs an already uploaded sql script - only called from client applications. The required arguments in the request.arguments parameter are:
-
-    Args:
-        filename (string): The name of the sql file to run.
-    Returns:
-        A dict with the following structure (if the class raises an exception, the error message is included in an 'error' key/value pair):
-
-        {
-            "info": Informational message
-        }
-    """
-
-    async def get(self):
-        try:
-            validate_args(self.request.arguments, ['filename'])
-            # check the SQL file exists
-            if not os.path.exists(project_paths.PROJECT_FOLDER + self.get_argument("filename")):
-                raise ServicesError(
-                    "File '" + self.get_argument("filename") + "' does not exist")
-            # see if suppressOutput is set
-            suppressOutput = True if 'suppressOutput' in self.request.arguments else False
-            # set the command
-            cmd = 'sudo -u postgres psql -f ' + project_paths.PROJECT_FOLDER + self.get_argument(
-                "filename") + ' postgresql://' + db_config.DATABASE_USER + ':' + db_config.DATABASE_PASSWORD + '@localhost:5432/marxanserver'
-            # run the command
-            result = await run_command(cmd, suppressOutput)
-            self.send_response({'info': result})
-        except ServicesError as e:
-            raise_error(self, e.args[0])
 
 
 class cleanup(BaseHandler):
@@ -2369,7 +2310,7 @@ class cleanup(BaseHandler):
 
 
 class shutdown(BaseHandler):
-    """REST HTTP handler. Shuts down the marxan-server and computer after a period of time - currently only on Unix. The required arguments in the request.arguments parameter are:
+    """REST HTTP handler. Shuts down the server and computer after a period of time - currently only on Unix. The required arguments in the request.arguments parameter are:
 
     Args:
         delay (string): The delay in minutes after which the server will be shutdown.
@@ -2391,13 +2332,13 @@ class shutdown(BaseHandler):
                         timezone.utc) + timedelta(minutes/1440)).isoformat())
                 # wait for so many minutes
                 await asyncio.sleep(minutes * 60)
-                logging.warning("marxan-server stopping due to shutdown event")
+                logging.warning("server stopping due to shutdown event")
                 # delete the shutdown file
                 if (os.path.exists(project_paths.PROJECT_FOLDER + "shutdown.dat")):
                     logging.warning("Deleting the shutdown file")
                     os.remove(project_paths.PROJECT_FOLDER + "shutdown.dat")
                 # shutdown the os
-                logging.warning("marxan-server stopped")
+                logging.warning("server stopped")
                 os.system('sudo shutdown now')
         except ServicesError as e:
             raise_error(self, e.args[0])
@@ -2419,6 +2360,25 @@ class testTornado(BaseHandler):
     def get(self):
         self.send_response({'info': "Tornado running"})
 
+
+class RestartMartin(BaseHandler):
+    async def get(self):
+        try:
+            if not project_paths.ENABLE_RESET:
+                raise ValueError(
+                    "Restart endpoint is disabled by config (ENABLE_RESET=false).")
+            self.send_response(restart_martin())
+        except Exception as e:
+            raise_error(self, str(e))
+
+    async def post(self):
+        try:
+            if not project_paths.ENABLE_RESET:
+                raise ValueError(
+                    "Restart endpoint is disabled by config (ENABLE_RESET=false).")
+            self.send_response(restart_martin())
+        except Exception as e:
+            raise_error(self, str(e))
 ####################################################################################################################################################################################################################################################################
 # WebSocketHandler subclasses
 ####################################################################################################################################################################################################################################################################
@@ -2933,8 +2893,8 @@ class importGBIFData(SocketHandler):
         """
         try:
             # build the url request
-            url = GBIF_API_ROOT + "species/" + \
-                str(taxonKey) + "/vernacularNames"
+            url = GBIF_API_ROOT + "species/" +
+            str(taxonKey) + "/vernacularNames"
             # make the request
             req = request.Request(url)
             # get the response
@@ -3182,232 +3142,6 @@ class exportProject(SocketHandler):
                 return f"PG:host={db_config.DATABASE_HOST} user={db_config.DATABASE_USER} dbname={db_config.DATABASE_NAME} password={db_config.DATABASE_PASSWORD} ACTIVE_SCHEMA=marxan"
 
 
-class ImportProject(SocketHandler):
-    """
-    REST WebSocket Handler. Imports a *.mxw file as a new project.
-
-    Required Arguments:
-        user (str): The name of the user.
-        project (str): The name of the project to create from the import file.
-        description (str): A description for the imported project.
-        filename (str): The name of the *.mxw file (minus the .mxw extension).
-
-    Returns:
-        WebSocket dict messages with the following keys:
-        {
-            "info": Detailed progress statements on the import process,
-            "elapsedtime": The elapsed time in seconds of the import,
-            "status": One of Preprocessing or Finished.
-        }
-    """
-
-    @staticmethod
-    def update_dataframe(df, mapping, df_join_field, mapping_join_field, new_values_field):
-        """
-        Updates the values in the `df` DataFrame using a mapping DataFrame. The values in `df_join_field`
-        are replaced by those in `new_values_field` from the mapping DataFrame.
-
-        Args:
-            df (pd.DataFrame): The DataFrame to update.
-            mapping (pd.DataFrame): The mapping DataFrame used to update values in `df`.
-            df_join_field (str): The field in `df` used for the join and whose values will be updated.
-            mapping_join_field (str): The field in `mapping` used for the join with `df`.
-            new_values_field (str): The field in `mapping` containing the new values to populate in `df`.
-
-        Returns:
-            pd.DataFrame: The updated DataFrame.
-        """
-        # Create a copy of the mapping DataFrame with renamed join fields
-        mapping_copy = mapping.rename(
-            columns={mapping_join_field: df_join_field})
-        # Perform a left join to incorporate the mapping values
-        updated_df = df.merge(
-            mapping_copy[[df_join_field, new_values_field]], on=df_join_field, how='left')
-        # Replace the original join field values with the new values
-        updated_df[df_join_field] = updated_df[new_values_field]
-        # Drop the new values field as it's no longer needed
-        updated_df = updated_df.drop(columns=[new_values_field])
-        # Reorder columns to maintain original column order
-        column_order = [df_join_field] + \
-            [col for col in df.columns if col != df_join_field]
-        return updated_df[column_order]
-
-    async def open(self):
-        try:
-            validate_args(self.request.arguments, [
-                'user', 'project', 'filename', 'description'
-            ])
-
-            user = self.get_argument('user')
-            project = self.get_argument('project').strip()
-            description = self.get_argument('description')
-            filename = self.get_argument('filename')
-            project_folder = os.path.join(
-                project_paths.USERS_FOLDER, user, project)
-
-            if os.path.exists(project_folder):
-                shutil.rmtree(project_folder)
-            os.makedirs(project_folder)
-
-            # Unzip files to the project folder
-            zip_path = os.path.join(project_paths.IMPORT_FOLDER, filename)
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(project_folder)
-
-            await super().open({'info': "Importing project.."})
-
-        except ServicesError:
-            pass
-
-        except zipfile.BadZipFile:
-            shutil.rmtree(project_folder, ignore_errors=True)
-            self.startTime = datetime.datetime.now()
-            self.close({'error': 'File is not a zip file'})
-            return
-
-        try:
-            # Import features
-            self.send_response(
-                {'status': 'Preprocessing', 'info': "Importing features.."})
-            cmd = (
-                f'"{db_config.OGR2OGR_EXECUTABLE}" -f "PostgreSQL" PG:"host={
-                    db_config.DATABASE_HOST} user={db_config.DATABASE_USER} '
-                f'dbname={db_config.DATABASE_NAME} password={
-                    db_config.DATABASE_PASSWORD}" "{project_folder + EXPORT_F_SHP_FOLDER}" '
-                f'-nlt GEOMETRY -lco SCHEMA=marxan -lco GEOMETRY_NAME=geometry -t_srs EPSG:4326 -lco precision=NO -skipfailures'
-            )
-            await run_command(cmd)
-
-            # Load feature metadata and process new features
-            feature_metadata = pd.read_csv(os.path.join(
-                project_folder, EXPORT_F_METADATA), sep='\t')
-
-            for idx, row in feature_metadata.iterrows():
-                results = await pg.execute(
-                    "SELECT * FROM bioprotect.metadata_interest_features WHERE feature_class_name = %s;",
-                    data=[row['feature_class_name']],
-                    return_format="Array"
-                )
-                if not results:
-                    self.send_response(
-                        {'status': 'Preprocessing', 'info': f"Importing {row['alias']}"})
-                    await finish_feature_import(row['feature_class_name'],
-                                                row['alias'],
-                                                row['description'],
-                                                f"Imported with project {
-                        user}/{project}",
-                        user)
-                else:
-                    self.send_response({'status': 'Preprocessing', 'info': f"{
-                                       row['alias']} already exists - skipping"})
-
-            # Update feature ID mappings in spec.dat and puvspr.dat
-            self.send_response(
-                {'status': 'Preprocessing', 'info': 'Updating feature ID values..'})
-
-            feature_class_names = feature_metadata['feature_class_name'].tolist(
-            )
-            updated_features = await pg.execute(
-                "SELECT unique_id, feature_class_name FROM bioprotect.metadata_interest_features WHERE feature_class_name = ANY (ARRAY[%s]);",
-                data=[feature_class_names],
-                return_format="DataFrame"
-            )
-            # join the source dataframe and the new data
-            feature_metadata = feature_metadata[['feature_class_name', 'oid']].rename(
-                columns={'feature_class_name': 'fcn', 'oid': 'id'}).set_index('fcn')
-            updated_features = updated_features[['feature_class_name', 'oid']].rename(
-                columns={'feature_class_name': 'fcn', 'oid': 'new_id'}).set_index('fcn')
-            # create a data frame with the old oid and the new old for the feature class
-            mapping = feature_metadata.join(updated_features)
-
-            # Update feature_preprocessing.dat
-            feature_preprocessing = file_to_df(os.path.join(
-                self.input_folder, "feature_preprocessing.dat"))
-            feature_preprocessing = self.update_dataframe(
-                feature_preprocessing,  mapping, 'id', 'id', 'new_id')
-            feature_preprocessing.to_csv(os.path.join(
-                self.input_folder, "feature_preprocessing.dat"), index=False)
-
-            # Update spec.dat
-            spec_dat = file_to_df(os.path.join(
-                self.input_folder, self.projectData["files"]["SPECNAME"]))
-            spec_dat = self.update_dataframe(
-                spec_dat,  mapping, 'id', 'id', 'new_id')
-            await write_csv(self, "SPECNAME", spec_dat)
-
-            # Update puvspr.dat
-            puvspr_dat = file_to_df(os.path.join(
-                self.input_folder, self.projectData["files"]["PUVSPRNAME"]))
-            puvspr_dat = self.update_dataframe(
-                puvspr_dat, mapping, 'species', 'id', 'new_id')
-            puvspr_dat = puvspr_dat.sort_values(by=['pu', 'species'])
-            await write_csv(self, "PUVSPRNAME", puvspr_dat)
-
-            # Clear output folder
-            delete_all_files(self.output_folder)
-
-            # Import planning grid metadata
-            self.send_response(
-                {'status': 'Preprocessing', 'info': 'Importing planning grid..'})
-
-            planning_grid_metadata = pd.read_csv(os.path.join(
-                project_folder, EXPORT_PU_METADATA), sep='\t')
-            planning_grid_metadata = planning_grid_metadata.where(
-                pd.notnull(planning_grid_metadata), None)
-            grid_row = planning_grid_metadata.iloc[0]
-
-            existing_grid = await pg.execute(
-                "SELECT * FROM bioprotect.metadata_planning_units WHERE feature_class_name = %s;",
-                data=[grid_row['feature_class_name']],
-                return_format="Array"
-            )
-
-            if not existing_grid:
-                await pg.execute(
-                    """
-                    INSERT INTO bioprotect.metadata_planning_units (
-                        feature_class_name, alias, description, country_id, aoi_id, domain, _area, envelope,
-                        creation_date, source, created_by, tilesetid, planning_unit_count
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, ST_SetSRID(ST_GeomFromText(%s), '4326'), NOW(),
-                        'Imported from .mxw file', %s, %s, %s);
-                    """,
-                    data=[
-                        grid_row['feature_class_name'], grid_row['alias'], grid_row['description'],
-                        grid_row['country_id'], grid_row['aoi_id'], grid_row['domain'], grid_row['_area'],
-                        grid_row['envelope'], user, grid_row['tilesetid'], grid_row['planning_unit_count']
-                    ]
-                )
-
-                # Import planning grid shapefile
-                cmd = (
-                    f'"{db_config.OGR2OGR_EXECUTABLE}" -f "PostgreSQL" PG:"host={
-                        db_config.DATABASE_HOST} user={db_config.DATABASE_USER} '
-                    f'dbname={db_config.DATABASE_NAME} password={
-                        db_config.DATABASE_PASSWORD}" "{project_folder + EXPORT_PU_SHP_FOLDER}" '
-                    f'-nlt GEOMETRY -lco SCHEMA=marxan -lco GEOMETRY_NAME=geometry -t_srs EPSG:4326 -lco precision=NO -lco FID=puid -skipfailures'
-                )
-                await run_command(cmd)
-
-            # Update project description
-            update_file_parameters(
-                os.path.join(project_folder, "input.dat"),
-                {'DESCRIPTION': description}
-            )
-
-            # Cleanup temporary files and folders
-            shutil.rmtree(os.path.join(project_folder, EXPORT_F_SHP_FOLDER))
-            shutil.rmtree(os.path.join(project_folder, EXPORT_PU_SHP_FOLDER))
-            os.remove(os.path.join(project_folder, EXPORT_F_METADATA))
-            os.remove(os.path.join(project_folder, EXPORT_PU_METADATA))
-            os.remove(zip_path)
-
-            # Finalize import
-            self.close({'info': "Import project complete"})
-
-        except Exception as e:
-            shutil.rmtree(project_folder, ignore_errors=True)
-            self.close({'error': str(e)})
-
 ####################################################################################################################################################################################################################################################################
 # baseclass for handling long-running PostGIS queries using WebSockets
 ####################################################################################################################################################################################################################################################################
@@ -3435,7 +3169,7 @@ class QueryWebSocketHandler(SocketHandler):
 ####################################################################################################################################################################################################################################################################
 
 # preprocesses the features by intersecting them with the planning units
-# wss://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/PreprocessFeature?user=andrew&project=Tonga%20marine%2030km2&planning_grid_name=pu_ton_marine_hexagon_30&feature_class_name=volcano&alias=volcano&id=63408475
+# wss://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/server/PreprocessFeature?user=andrew&project=Tonga%20marine%2030km2&planning_grid_name=pu_ton_marine_hexagon_30&feature_class_name=volcano&alias=volcano&id=63408475
 
 
 class PreprocessFeature(QueryWebSocketHandler):
@@ -3526,7 +3260,17 @@ class PreprocessFeature(QueryWebSocketHandler):
                                               != species_id]
 
                 # Append new intersection data
-                updated_data = pd.concat([existing_data, intersection_data])
+                updated_data = pd.concat([existing_data,  # The code `intersection_data` is likely a
+                                         # variable or function name in Python.
+                                          # Without seeing the actual code
+                                          # implementation, it is not possible to
+                                          # determine exactly what it is doing. The
+                                          # name suggests that it may be related to
+                                          # finding the intersection of data sets or
+                                          # collections. If you provide more context or
+                                          # the actual code implementation, I can help
+                                          # you understand it better.
+                                          intersection_data])
                 updated_data = updated_data.sort_values(by=['pu', 'species'])
 
                 # Write updated PUVSPR data
@@ -3689,48 +3433,6 @@ class preprocessPlanningUnits(QueryWebSocketHandler):
                     self.project_folder + "input.dat", {'BOUNDNAME': 'bounds.dat'})
             # set the response
             self.close({'info': 'Boundary lengths calculated'})
-
-# wss://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/runGapAnalysis?user=admin&project=British%20Columbia%20Marine%20Case%20Study
-
-
-class runGapAnalysis(QueryWebSocketHandler):
-    """REST WebSocket Handler. Runs a gap analysis. The required arguments in the request.arguments parameter are:
-
-    Args:
-        user (string): The name of the user.
-        project (string): The name of the project.
-    Returns:
-        WebSocket dict messages with one or more of the following keys (if the class raises an exception, the error message is included in an 'error' key/value pair):
-
-        {
-            "info": Informational message,
-            "elapsedtime": The elapsed time in seconds of the run,
-            "status": One of Preprocessing or Finished,
-            "data": dict[]: The gap analysis results. Each dict has the keys: country_area,current_protected_area,current_protected_percent,endemic,total_area,_alias,_feature_class_name
-        }
-    """
-
-    async def open(self):
-        try:
-            await super().open({'info': "Running gap analysis.."})
-        except ServicesError:  # authentication/authorisation error
-            pass
-        else:
-            validate_args(self.request.arguments, ['user', 'project'])
-            # get the identifiers of the features for the project
-            df = file_to_df(os.path.join(
-                self.input_folder, self.projectData["files"]["SPECNAME"]))
-
-            featureIds = df['id'].to_numpy().tolist()
-            # get the planning grid name
-            await get_project_data(pg, self)
-            # get a safe project name to use in the name of the table that will be produced
-            project_name = get_safe_project_name(self.get_argument("project"))
-            # run the gap analysis
-            df = await self.executeQuery("SELECT * FROM bioprotect.gap_analysis(%s,%s,%s,%s)", data=[self.projectData["metadata"]["PLANNING_UNIT_NAME"], featureIds, self.get_argument("user"), project_name], return_format="DataFrame")
-            # return the results
-            self.close({'info': "Gap analysis complete",
-                        'data': df.to_dict(orient="records")})
 
 
 class resetDatabase(QueryWebSocketHandler):
@@ -4504,7 +4206,6 @@ def add_shapefile_to_db(filename, gridname, tablename):
         print("Pass in the location of the file as a string, not anything else....")
         return False
 
-# wss://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/marxan-server/runGapAnalysis?user=admin&project=British%20Columbia%20Marine%20Case%20Study
 
 # tornado functions
 ####################################################################################################################################################################################################################################################################
@@ -4540,7 +4241,6 @@ class Application(tornado.web.Application):
                                                       get_species_data=get_species_data,
                                                       update_species=update_species_file)),
             ("/server/exportProject", exportProject),
-            ("/server/importProject", ImportProject),
             ("/server/users", UserHandler, dict(pg=pg, project_paths=project_paths)),
             ("/server/features", FeatureHandler, dict(pg=pg,
                                                       finish_feature_import=finish_feature_import)),
@@ -4591,8 +4291,6 @@ class Application(tornado.web.Application):
             ("/server/getRunLogs", getRunLogs),
             ("/server/clearRunLogs", clearRunLogs),
             ("/server/updateWDPA", updateWDPA),
-            ("/server/runGapAnalysis", runGapAnalysis),
-            ("/server/deleteGapAnalysis", deleteGapAnalysis),
 
             ("/server/importGBIFData", importGBIFData),
             ("/server/dismissNotification", dismissNotification),
@@ -4600,10 +4298,10 @@ class Application(tornado.web.Application):
             ("/server/testRoleAuthorisation", testRoleAuthorisation),
             ("/server/addParameter", addParameter),
             ("/server/resetDatabase", resetDatabase),
-            ("/server/runSQLFile", runSQLFile),
             ("/server/cleanup", cleanup),
             ("/server/shutdown", shutdown),
             ("/server/testTornado", testTornado),
+            ("/server/restart-martin", RestartMartin),
 
             ("/server/uploadRaster", UploadRasterHandler),
             ("/server/saveRaster", SaveRasterHandler),
@@ -4611,11 +4309,12 @@ class Application(tornado.web.Application):
             ("/server/runCumumlativeImpact", CumulativeImpactHandler),
             ("/server/uploadFile", uploadFile),
 
+
             ("/server/exports/(.*)", StaticFileHandler,
              {"path": project_paths.EXPORT_FOLDER}),
             # default handler if the REST services is cannot be found on this server - maybe a newer client is requesting a method on an old server
             ("/server/(.*)", methodNotFound),
-            # assuming the marxan-client is installed in the same folder as the marxan-server all files will go to the client build folder
+            # assuming the client is installed in the same folder as the server all files will go to the client build folder
             (r"/(.*)", StaticFileHandler, {"path": FRONTEND_BUILD_FOLDER})
         ]
 
@@ -4646,7 +4345,7 @@ async def initialiseApp():
     # add a file logger
     if not project_paths.DISABLE_FILE_LOGGING:
         file_log_handler = logging.FileHandler(
-            os.path.join(project_paths.PROJECT_FOLDER, 'marxan-server.log'))
+            os.path.join(project_paths.PROJECT_FOLDER, 'server.log'))
         file_log_handler.setFormatter(LogFormatter(
             fmt=f1 + f2, datefmt='%d-%m-%y %H:%M:%S', color=False))
         root_logger.addHandler(file_log_handler)
@@ -4668,10 +4367,10 @@ async def initialiseApp():
     else:
         navigateTo = f"{protocol}<host>/index.html"
 
-    # open the web browser if the call includes a url, e.g. python marxan-server.py http://localhost/index.html
+    # open the web browser if the call includes a url, e.g. python server.py http://localhost/index.html
     if len(sys.argv) > 1:
         if MARXAN_CLIENT_VERSION == "Not installed":
-            log("Ignoring <url> parameter - the marxan-client is not installed", Fore.GREEN)
+            log("Ignoring <url> parameter - the client is not installed", Fore.GREEN)
         else:
             url = sys.argv[1]  # normally "http://localhost/index.html"
             log(f"Opening Marxan Web at {url} ..\n  {Fore.GREEN}")
@@ -4680,8 +4379,8 @@ async def initialiseApp():
     elif MARXAN_CLIENT_VERSION != "Not installed":
         log(f"Goto to {navigateTo} to open Marxan Web {Fore.GREEN}")
         log(
-            f"Or run 'python marxan-server.py {navigateTo} to open a browser\n {Fore.GREEN}")
-    logging.warning("marxan-server started")
+            f"Or run 'python server.py {navigateTo} to open a browser\n {Fore.GREEN}")
+    logging.warning("server started")
     # otherwise subprocesses fail on windows
     if platform.system() == "Windows":
         asyncio.set_event_loop_policy(AnyThreadEventLoopPolicy())
@@ -4712,5 +4411,5 @@ if __name__ == "__main__":
             log(f"Unhandled exception: {e}")
         SHUTDOWN_EVENT.set()
     finally:
-        logging.warning("marxan-server stopped")
+        logging.warning("server stopped")
         SHUTDOWN_EVENT.set()

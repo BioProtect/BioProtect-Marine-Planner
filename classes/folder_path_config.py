@@ -18,6 +18,7 @@ class FolderPathConfig:
         self.PROJECT_FOLDER = path.abspath(
             path.join(path.dirname(__file__), "..")) + sep
         self.gis_config = self.setup_environment()
+        self.ENABLE_RESET = True
         self.load_app_vars()
         self.initialize_paths()
 

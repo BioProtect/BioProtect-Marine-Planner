@@ -23,3 +23,5 @@ These link to metadata_planning_units.feature_class_name (used as Martin source-
 | `getplanningunits()`            | Lists all grids from `metadata_planning_units`         |
 | `get_planning_units_metadata()` | Gets enriched metadata for a grid by ID                |
 | `get_project_pus()`             | Gets the project’s planning units (from `project_pus`) |
+
+---
