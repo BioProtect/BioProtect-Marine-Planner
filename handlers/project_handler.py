@@ -15,6 +15,7 @@ from services.file_service import (delete_all_files, file_to_df,
                                    write_to_file)
 from services.project_service import clone_a_project
 from services.service_error import ServicesError, raise_error
+from decimal import Decimal
 
 
 class ProjectHandler(BaseHandler):
@@ -39,6 +40,10 @@ class ProjectHandler(BaseHandler):
         """Convert datetime objects to a JSON-serializable format."""
         if isinstance(obj, datetime):
             return obj.isoformat()
+        if isinstance(obj, Decimal):
+            # convert to float or str depending on precision needs
+            return float(obj)
+
         raise TypeError(f"Type {type(obj)} not serializable")
 
     async def get_project_by_id(self, project_id):
@@ -129,27 +134,8 @@ class ProjectHandler(BaseHandler):
         Returns:
             list[dict]: Each dict contains full project data.
         """
-
-        print('user_id: ', user_id)
-        projects = await self.pg.execute("""
-            SELECT p.*, pu.alias AS planning_unit_alias
-            FROM bioprotect.projects p
-            LEFT JOIN bioprotect.metadata_planning_units pu
-                ON p.planning_unit_id = pu.unique_id
-            WHERE p.user_id = %s
-            ORDER BY LOWER(p.name)
-        """, [user_id], return_format="Dict")
-
-        projects = await self.pg.execute("""
-            SELECT p.*, pu.alias AS planning_unit_alias, up.role
-            FROM bioprotect.projects p
-            JOIN bioprotect.user_projects up
-            ON up.project_id = p.id
-            LEFT JOIN bioprotect.metadata_planning_units pu
-            ON p.planning_unit_id = pu.unique_id
-            WHERE up.user_id = %s
-            ORDER BY LOWER(p.name)
-        """, [user_id], return_format="Dict")
+        projects = await self.pg.execute(
+            "SELECT * FROM bioprotect.get_projects_for_user(%s)", [user_id], return_format="Dict")
 
         project_data_list = []
 
@@ -172,24 +158,9 @@ class ProjectHandler(BaseHandler):
             """, [project_id], return_format="Dict")
 
             # Fetch project features.
-            features = await self.pg.execute("""
-                SELECT
-                  f.unique_id,
-                  f.feature_class_name,
-                  f.alias,
-                  f.description,
-                  f.creation_date,
-                  f._area,
-                  f.tilesetid,
-                  f.extent,
-                  f.source,
-                  f.created_by
-                FROM bioprotect.project_features pf
-                JOIN bioprotect.metadata_interest_features f
-                  ON f.unique_id = pf.feature_unique_id
-                WHERE pf.project_id = %s
-                ORDER BY f.alias
-            """, [project_id], return_format="Dict")
+
+            features = await self.pg.execute(
+                "SELECT * FROM bioprotect.get_project_features(%s)", [project_id], return_format="Dict")
 
             # Fetch planning unit metadata (optional)
             pu_metadata = {}
@@ -348,7 +319,6 @@ class ProjectHandler(BaseHandler):
         })
 
     # GET /projects?action=get&user=username&project=project_name
-
     async def get_project(self):
         project_id = self.get_argument('projectId', None)
         resolution = int(self.get_argument("resolution", 7))
@@ -715,52 +685,60 @@ class ProjectHandler(BaseHandler):
             'data': projects
         })
 
-    async def _remove_unlinked_features(self, project_id, feature_ids):
+    async def resolve_user_id(self, user):
         """
-        Remove project_features that are not in the provided feature_ids,
-        and cascade delete related rows in pu_feature_amounts + feature_preprocessing.
-        If feature_ids is empty, remove all.
+        Resolve user_id from either a username (string) or user_id (int).
         """
-        removed_ids = []
+        if user is None:
+            return None
+        try:
+            return int(user)
+        except (ValueError, TypeError):
+            pass
 
-        if feature_ids:
-            removed_rows = await self.pg.execute("""
-                SELECT feature_unique_id
-                FROM bioprotect.project_features
-                WHERE project_id = %s
-                AND NOT (feature_unique_id = ANY(%s))
-            """, [project_id, feature_ids], return_format="Array")
-            removed_ids = [r["feature_unique_id"] for r in removed_rows]
+        # Otherwise, look up by username
+        rows = await self.pg.execute(
+            "SELECT id FROM bioprotect.users WHERE username = %s", [user], return_format="Array")
+        if not rows:
+            raise ServicesError(f"User '{user}' not found.")
+        return rows[0]["id"]
 
-            await self.pg.execute("""
-                DELETE FROM bioprotect.project_features
-                WHERE project_id = %s
-                AND NOT (feature_unique_id = ANY(%s))
-            """, [project_id, feature_ids])
+    async def resolve_and_check_project(self, project_id=None, user=None):
+        """
+        Resolve project_id from:
+        - explicit arg (preferred), OR
+        - request args 'project_id' or legacy 'project'
+        Always verifies the project exists.
+        If a user is provided (username or id), also verifies access via user_projects.
+        """
+        # 1) pick a project id: explicit > 'project_id' arg > legacy 'project' arg
+        pid = project_id
+        print('1pid: ', pid)
+        if pid is None:
+            pid = self.get_argument("project_id", None)
+            print('2pid: ', pid)
+        if pid is None:
+            pid = self.get_argument("project", None)  # legacy support
+        if pid is None:
+            raise ServicesError("Missing project_id.")
 
-        else:
-            removed_rows = await self.pg.execute("""
-                SELECT feature_unique_id
-                FROM bioprotect.project_features
-                WHERE project_id = %s
-            """, [project_id], return_format="Array")
-            removed_ids = [r["feature_unique_id"] for r in removed_rows]
+        try:
+            pid = int(pid)
+        except (ValueError, TypeError):
+            raise ServicesError("Invalid project_id.")
 
-            await self.pg.execute(
-                "DELETE FROM bioprotect.project_features WHERE project_id = %s",
-                [project_id]
-            )
+        print('pid before query: ', pid)
 
-        # if removed_ids:
-        #     await self.pg.execute("""
-        #         DELETE FROM bioprotect.pu_feature_amounts
-        #         WHERE project_id = %s AND feature_unique_id = ANY(%s)
-        #     """, [project_id, removed_ids])
-
-        #     await self.pg.execute("""
-        #         DELETE FROM bioprotect.feature_preprocessing
-        #         WHERE project_id = %s AND feature_unique_id = ANY(%s)
-        #     """, [project_id, removed_ids])
+        # 2) ensure project exists
+        exists_row = await self.pg.execute(
+            "SELECT 1 FROM bioprotect.projects WHERE id = %s",
+            [pid],
+            return_format="Array"
+        )
+        if not exists_row:
+            raise ServicesError(f"Project {pid} not found.")
+        print('pid being returned: ', pid)
+        return pid
 
     async def update_project_features(self, project_id=None):
         """
@@ -769,74 +747,47 @@ class ProjectHandler(BaseHandler):
         """
         self.validate_args(self.request.arguments, ['interest_features'])
 
-        interest_features = self.get_argument("interest_features")
-        target_values = self.get_argument("target_values", None)
-        spf_values = self.get_argument("spf_values", None)
+        user = self.get_argument("user", None)
+        user_id = await self.resolve_user_id(user)
+
+        pid = await self.resolve_and_check_project(project_id)
+        print('project_id: ', project_id)
+
+        features = self.get_argument("interest_features")
+        print('features: ', features)
+        values = self.get_argument("target_values", None)
+        print('values: ', values)
+        spf_vals = self.get_argument("spf_values", None)
 
         # parse lists
-        feature_ids = [int(x)
-                       for x in interest_features.split(",") if x.strip()]
-        targets = [x.strip() for x in target_values.split(",")
-                   ] if target_values else []
-        spfs = [x.strip()
-                for x in spf_values.split(",")] if spf_values else []
+        feature_ids = [int(x) for x in features.split(",") if x.strip()]
+        targets = [x.strip() for x in values.split(",")] if values else []
+        print('targets: ', targets)
+        spfs = [x.strip() for x in spf_vals.split(",")] if spf_vals else []
 
         # basic length check (non-fatal; we still link features)
         if (targets and len(targets) != len(feature_ids)) or (spfs and len(spfs) != len(feature_ids)):
             raise ServicesError(
                 "Lengths of interest_features, target_values, and spf_values must match.")
 
-        # 1) resolve project_id
-        # If project_id is passed in (create_project), use it.
-        # Otherwise, resolve from user + project args (update_features endpoint).
-        if project_id is None:
-            user = self.get_argument("user")
-            project_name = self.get_argument("project")
-            rows = await self.pg.execute("""
-                select p.id as project_id
-                from bioprotect.projects p
-                join bioprotect.user_projects up on up.project_id = p.id
-                join bioprotect.users u on u.id = up.user_id
-                where u.username = %s and p.name = %s
-            """, [user, project_name], return_format="Array")
-            if not rows:
-                raise ServicesError(
-                    f"Project '{project_name}' for user '{user}' not found.")
-
-            project_id = rows[0]["project_id"]
-
-        # 2) clear features that have been deselected and remove them from other possible tables as well
-        await self._remove_unlinked_features(project_id, feature_ids)
-
         # 3) upsert new data
+        print('feature_ids: ', feature_ids)
         for idx, fid in enumerate(feature_ids):
-            raw_target = float(targets[idx]) if targets and idx < len(
+            print('idx, fid: ', idx, fid)
+            tv = float(targets[idx]) if targets and idx < len(
                 targets) else None
-            if raw_target is not None:
-                tv = raw_target / 100 if raw_target > 1 else raw_target
-            else:
-                tv = None
             spf = float(spfs[idx]) if spfs and idx < len(spfs) else None
             weight = None
             target_type = "prop"  # or allow from payload
+            print('project_id, fid, target_type, tv, spf, weight: ',
+                  pid, fid, target_type, tv, spf, weight)
 
-            await self.pg.execute("""
-                INSERT INTO bioprotect.project_features (
-                    project_id, feature_unique_id, target_type, target_value, spf, weight
-                )
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (project_id, feature_unique_id)
-                DO UPDATE SET
-                    target_type  = COALESCE(EXCLUDED.target_type,  project_features.target_type),
-                    target_value = COALESCE(EXCLUDED.target_value, project_features.target_value),
-                    spf          = COALESCE(EXCLUDED.spf,          project_features.spf),
-                    weight       = COALESCE(EXCLUDED.weight,       project_features.weight),
-                    updated_at   = now()
-            """, [project_id, fid, target_type, tv, spf, weight])
+            await self.pg.execute(
+                "SELECT bioprotect.update_project_feature(%s, %s, %s, %s, %s, %s)",
+                [pid, fid, target_type, tv, spf, weight])
 
-        return {"info": "Project features updated", "project_id": project_id}
-
-        return
+        self.send_response({"info": "Project features updated",
+                            "project_id": pid})
 
     # POST /projects?action=update
     # Body:

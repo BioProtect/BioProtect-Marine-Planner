@@ -40,6 +40,7 @@ from handlers.feature_handler import FeatureHandler
 from handlers.planning_unit_handler import PlanningUnitHandler
 from handlers.planning_unit_websocket_handler import \
     PlanningGridWebSocketHandler
+from handlers.preprocess_feature_websocket_handler import PreprocessFeature
 from handlers.project_handler import ProjectHandler
 from handlers.user_handler import UserHandler
 from handlers.websocket_handler import SocketHandler
@@ -56,8 +57,8 @@ from services.file_service import (add_parameter_to_file,
                                    update_file_parameters, write_df_to_file,
                                    write_to_file)
 from services.martin_service import restart_martin
-from services.project_service import (
-    get_project_data, set_folder_paths, write_csv)
+from services.project_service import (get_project_data, set_folder_paths,
+                                      write_csv)
 from services.run_command_service import run_command
 from services.service_error import ServicesError, raise_error
 from services.user_service import (dismiss_notification, get_users,
@@ -2648,149 +2649,6 @@ class QueryWebSocketHandler(SocketHandler):
 # WebSocket subclasses
 ####################################################################################################################################################################################################################################################################
 
-# preprocesses the features by intersecting them with the planning units
-# wss://61c92e42cb1042699911c485c38d52ae.vfs.cloud9.eu-west-1.amazonaws.com:8081/server/PreprocessFeature?user=andrew&project=Tonga%20marine%2030km2&planning_grid_name=pu_ton_marine_hexagon_30&feature_class_name=volcano&alias=volcano&id=63408475
-
-
-class PreprocessFeature(QueryWebSocketHandler):
-    """
-    REST WebSocket Handler. Preprocesses features by intersecting them with planning units. Summarizes polygon areas or point values for each planning unit.
-
-    Required Arguments:
-        user (str): The name of the user.
-        project (str): The name of the project.
-        id (str): The feature OID.
-        feature_class_name (str): The feature class name.
-        alias (str): The alias for the feature.
-        planning_grid_name (str): The name of the planning grid.
-
-    Returns:
-        dict: WebSocket messages with keys:
-            - "info": Detailed progress messages.
-            - "elapsedtime": Time taken for processing.
-            - "status": Either "Preprocessing" or "Finished".
-            - "feature_class_name": The name of the preprocessed feature class.
-            - "id": The feature OID.
-            - "pu_area": Total area of the feature in the planning grid.
-            - "pu_count": Total number of planning grids intersecting the feature.
-    """
-
-    async def open(self):
-        try:
-            alias = self.get_argument('alias')
-            await super().open({'info': f"Preprocessing '{alias}'.."})
-        except ServicesError:
-            pass  # Authentication/authorization error
-        else:
-            validate_args(self.request.arguments, [
-                'user', 'project', 'id', 'feature_class_name', 'alias', 'planning_grid_name'
-            ])
-
-            try:
-                # Determine geometry type
-                feature_class_name = self.get_argument('feature_class_name')
-                planning_grid_name = self.get_argument('planning_grid_name')
-
-                geometry_type = await pg.get_geometry_type(feature_class_name)
-
-                if geometry_type != 'ST_Point':
-                    # Query for polygon intersection and area
-                    query = sql.SQL(
-                        """
-                        SELECT metadata.oid::integer species, grid.puid pu,
-                               ST_Area(ST_Transform(ST_Union(ST_Intersection(grid.geometry, feature.geometry)), 3410)) amount
-                        FROM bioprotect.{grid} grid, bioprotect.{feature} feature, bioprotect.metadata_interest_features metadata
-                        WHERE ST_Intersects(grid.geometry, feature.geometry)
-                          AND metadata.feature_class_name = %s
-                        GROUP BY 1, 2;
-                        """
-                    ).format(grid=sql.Identifier(planning_grid_name), feature=sql.Identifier(feature_class_name))
-                else:
-                    # Query for point intersection and sum of values
-                    query = sql.SQL(
-                        """
-                        SELECT metadata.oid::integer species, grid.puid pu, SUM(feature.value) amount
-                        FROM bioprotect.{grid} grid, bioprotect.{feature} feature, bioprotect.metadata_interest_features metadata
-                        WHERE ST_Intersects(grid.geometry, feature.geometry)
-                          AND metadata.feature_class_name = %s
-                        GROUP BY 1, 2;
-                        """
-                    ).format(grid=sql.Identifier(planning_grid_name), feature=sql.Identifier(feature_class_name))
-
-                intersection_data = await self.executeQuery(query, data=[feature_class_name], return_format="DataFrame")
-
-            except ServicesError as e:
-                self.close({'error': e.args[0]})
-                return
-
-            try:
-                # Load existing PUVSPR data
-                puvspr_path = os.path.join(
-                    self.input_folder, self.projectData["files"]["PUVSPRNAME"])
-                try:
-                    existing_data = file_to_df(puvspr_path)
-                except FileNotFoundError:
-                    # Initialize empty DataFrame if no existing data
-                    existing_data = pd.DataFrame(
-                        columns=['species', 'pu', 'amount'])
-
-                # Remove existing records for this species
-                species_id = int(self.get_argument('id'))
-                existing_data = existing_data[existing_data['species']
-                                              != species_id]
-
-                # Append new intersection data
-                updated_data = pd.concat([existing_data,  # The code `intersection_data` is likely a
-                                         # variable or function name in Python.
-                                          # Without seeing the actual code
-                                          # implementation, it is not possible to
-                                          # determine exactly what it is doing. The
-                                          # name suggests that it may be related to
-                                          # finding the intersection of data sets or
-                                          # collections. If you provide more context or
-                                          # the actual code implementation, I can help
-                                          # you understand it better.
-                                          intersection_data])
-                updated_data = updated_data.sort_values(by=['pu', 'species'])
-
-                # Write updated PUVSPR data
-                await write_csv(self, "PUVSPRNAME", updated_data)
-
-                # Calculate statistics for the feature
-                filtered_data = updated_data[updated_data['species']
-                                             == species_id]
-                pu_count = filtered_data['pu'].count()
-                pu_area = filtered_data['amount'].sum()
-
-                # Create and write summary record
-                summary_record = pd.DataFrame({
-                    'id': [species_id],
-                    'pu_area': [pu_area],
-                    'pu_count': [pu_count]
-                }).astype({'id': 'int', 'pu_area': 'float', 'pu_count': 'int'})
-
-                feature_preprocessing_path = os.path.join(
-                    self.input_folder, "feature_preprocessing.dat")
-                write_df_to_file(feature_preprocessing_path, summary_record)
-
-            except ServicesError as e:
-                self.close({'error': e.args[0]})
-                return
-
-            # Update input.dat and finalize response
-            update_file_parameters(
-                os.path.join(self.project_folder, "input.dat"),
-                {'PUVSPRNAME': "puvspr.dat"}
-            )
-
-            self.close({
-                'info': f"Feature '{alias}' preprocessed",
-                'feature_class_name': feature_class_name,
-                'pu_area': str(pu_area),
-                'pu_count': str(pu_count),
-                'id': str(species_id)
-            })
-
 
 class ProcessProtectedAreas(QueryWebSocketHandler):
     """
@@ -3717,8 +3575,7 @@ class Application(tornado.web.Application):
 
         return [
             ("/server/auth", AuthHandler),
-            ("/server/projects",
-                ProjectHandler, dict(pg=pg)),
+            ("/server/projects", ProjectHandler, dict(pg=pg)),
             ("/server/users", UserHandler, dict(pg=pg, project_paths=project_paths)),
             ("/server/features", FeatureHandler, dict(pg=pg,
                                                       finish_feature_import=finish_feature_import)),
@@ -3759,7 +3616,7 @@ class Application(tornado.web.Application):
             ("/server/getMarxanLog", getMarxanLog),
             ("/server/getResults", getResults),
             ("/server/getSolution", GetSolution),
-            ("/server/preprocessFeature", PreprocessFeature),
+            ("/server/preprocessFeature", PreprocessFeature, dict(pg=pg)),
             ("/server/preprocessPlanningUnits", preprocessPlanningUnits),
             ("/server/processProtectedAreas", ProcessProtectedAreas),
 
